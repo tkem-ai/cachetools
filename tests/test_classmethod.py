@@ -114,6 +114,48 @@ class CachedClassMethodTest(unittest.TestCase):
         self.assertIs(w[0].category, DeprecationWarning)
         self.assertIs(w[1].category, DeprecationWarning)
 
+    def test_shared_cache(self):
+        class Child(Cached):
+            pass
+
+        Cached.cache = LRUCache(2)
+        Cached.count = 0
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # the cache is a class attribute, so it is shared with subclasses
+            self.assertIs(Child.cache, Cached.cache)
+            self.assertEqual(Cached.get(0), 1)
+            self.assertEqual(Child.get(0), 1)
+            self.assertEqual(Child().get(0), 1)
+            self.assertEqual(len(Cached.cache), 1)
+            self.assertEqual(Child.get(1), 2)
+            self.assertEqual(Cached.get(1), 2)
+            self.assertEqual(len(Cached.cache), 2)
+            # clearing through the subclass clears the shared cache
+            Child.get.cache_clear(Child)  # type: ignore
+            self.assertEqual(len(Cached.cache), 0)
+            self.assertEqual(Cached.get(0), 2)
+
+    def test_info_unsupported(self):
+        class Unsupported:
+            cache = LRUCache(2)
+
+            @classmethod
+            @cachedmethod(lambda cls: cls.cache, info=True)
+            def get(cls, value):
+                return value
+
+        # info=True requires an instance method, so calls fail on all
+        # supported Python versions, although with different messages
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with self.assertRaises(TypeError):
+                Unsupported.get(0)
+            with self.assertRaises(TypeError):
+                Unsupported().get(0)
+            self.assertEqual(len(Unsupported.cache), 0)
+
     def test_clear(self):
         Cached.cache = LRUCache(2)
         Cached.count = 0
