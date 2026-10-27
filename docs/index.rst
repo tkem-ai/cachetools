@@ -612,6 +612,16 @@ often called with the same arguments:
    e.g. :func:`cachetools.keys.hashkey`, if you need `self` to be part
    of the cache key.
 
+   Accessing a decorated method through its class, e.g. ``Cls.method``,
+   yields a callable that takes the instance as its first positional
+   argument, or as a keyword argument named after the wrapped method's
+   first parameter.  Unlike the instance's wrapped method, this
+   callable does not provide the :attr:`cache` attributes or the
+   :meth:`cache_clear()` and :meth:`cache_info()` functions.  Note
+   also that pickling or deep-copying an instance restores its wrapped
+   methods with fresh :meth:`cache_info()` statistics, i.e. with the
+   hit and miss counts reset to zero.
+
    When using a shared cache for multiple methods, be aware that
    different cache keys must be created for each method even when
    function arguments are the same, just as with the :func:`cached`
