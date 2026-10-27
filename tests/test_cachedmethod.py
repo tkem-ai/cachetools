@@ -1005,6 +1005,85 @@ class UnboundMethodTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             Named.get_noargs()
 
+    def test_class_access_attributes(self):
+        # class access yields a plain callable without the per-instance
+        # cache attributes and functions
+        for unbound in (
+            Cached.get,
+            Cached.get_info,
+            Cached.get_lock,
+            Cached.get_lock_info,
+            Cached.get_cond,
+            Cached.get_cond_info,
+            Cached.get_lock_cond,
+            Cached.get_lock_cond_info,
+        ):
+            self.assertTrue(callable(unbound))
+            self.assertTrue(hasattr(unbound, "__wrapped__"))
+            self.assertFalse(hasattr(unbound, "cache"))
+            self.assertFalse(hasattr(unbound, "cache_key"))
+            self.assertFalse(hasattr(unbound, "cache_lock"))
+            self.assertFalse(hasattr(unbound, "cache_condition"))
+            self.assertFalse(hasattr(unbound, "cache_clear"))
+            self.assertFalse(hasattr(unbound, "cache_info"))
+
+    def test_class_call_lock(self):
+        cached = Cached(Cache(2))
+        self.assertEqual(Cached.get_lock(cached, 1), 0)
+        self.assertEqual(cached.get_lock(1), 0)
+        self.assertEqual(Cached.get_lock(cached, 2), 1)
+        self.assertEqual(cached.count, 2)
+        self.assertEqual(cached.lock.count, 5)
+
+        cached = Cached(Cache(2))
+        self.assertEqual(Cached.get_lock_info(cached, 1), 0)
+        self.assertEqual(cached.get_lock_info(1), 0)
+        self.assertEqual(Cached.get_lock_info(cached, 2), 1)
+        self.assertEqual(cached.count, 2)
+        self.assertEqual(cached.lock.count, 5)
+        self.assertEqual(cached.get_lock_info.cache_info(), (1, 2, 2, 2))
+
+    def test_class_call_condition(self):
+        cached = Cached(Cache(2))
+        self.assertEqual(Cached.get_cond(cached, 1), 0)
+        self.assertEqual(cached.get_cond(1), 0)
+        self.assertEqual(Cached.get_cond(cached, 2), 1)
+        self.assertEqual(cached.count, 2)
+        self.assertEqual(cached.cond.count, 7)
+        self.assertEqual(cached.cond.wait_count, 0)
+        self.assertEqual(cached.cond.notify_count, 2)
+
+        cached = Cached(Cache(2))
+        self.assertEqual(Cached.get_cond_info(cached, 1), 0)
+        self.assertEqual(cached.get_cond_info(1), 0)
+        self.assertEqual(Cached.get_cond_info(cached, 2), 1)
+        self.assertEqual(cached.count, 2)
+        self.assertEqual(cached.cond.count, 7)
+        self.assertEqual(cached.cond.wait_count, 0)
+        self.assertEqual(cached.cond.notify_count, 2)
+        self.assertEqual(cached.get_cond_info.cache_info(), (1, 2, 2, 2))
+
+        cached = Cached(Cache(2))
+        self.assertEqual(Cached.get_lock_cond(cached, 1), 0)
+        self.assertEqual(cached.get_lock_cond(1), 0)
+        self.assertEqual(Cached.get_lock_cond(cached, 2), 1)
+        self.assertEqual(cached.count, 2)
+        self.assertEqual(cached.lock.count, 7)
+        self.assertEqual(cached.cond.count, 0)
+        self.assertEqual(cached.cond.wait_count, 0)
+        self.assertEqual(cached.cond.notify_count, 2)
+
+        cached = Cached(Cache(2))
+        self.assertEqual(Cached.get_lock_cond_info(cached, 1), 0)
+        self.assertEqual(cached.get_lock_cond_info(1), 0)
+        self.assertEqual(Cached.get_lock_cond_info(cached, 2), 1)
+        self.assertEqual(cached.count, 2)
+        self.assertEqual(cached.lock.count, 7)
+        self.assertEqual(cached.cond.count, 0)
+        self.assertEqual(cached.cond.wait_count, 0)
+        self.assertEqual(cached.cond.notify_count, 2)
+        self.assertEqual(cached.get_lock_cond_info.cache_info(), (1, 2, 2, 2))
+
     def test_class_access_identity(self):
         self.assertIs(Cached.get, Cached.get)
         self.assertIs(Cached.get_info, Cached.get_info)
