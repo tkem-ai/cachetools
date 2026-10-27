@@ -24,30 +24,14 @@ import time
 from . import keys
 
 
-class _DefaultSize:
-    """A minimal "fake" dict that returns a constant size 1 for any key."""
-
-    __slots__ = ()
-
-    def __getitem__(self, _key):
-        return 1
-
-    def __setitem__(self, _key, _value):
-        pass
-
-    def pop(self, _key):
-        return 1
-
-    def clear(self):
-        pass
-
-
 class Cache(collections.abc.MutableMapping):
     """Mutable mapping to serve as a simple cache or cache base class."""
 
     __marker = object()
 
-    __size = _DefaultSize()
+    # Per-key sizes, or None with the default getsizeof(), where every
+    # value has size 1 and no size bookkeeping is needed.
+    __size = None
 
     def __init__(self, maxsize, getsizeof=None):
         if maxsize < 0:
@@ -76,6 +60,19 @@ class Cache(collections.abc.MutableMapping):
 
     def __setitem__(self, key, value):
         maxsize = self.__maxsize
+        sizes = self.__size
+        if sizes is None:
+            data = self.__data
+            if key in data:
+                data[key] = value
+                return
+            if maxsize < 1:
+                raise ValueError("value too large")
+            while self.__currsize + 1 > maxsize:
+                self.popitem()
+            data[key] = value
+            self.__currsize += 1
+            return
         size = self.getsizeof(value)
         if size < 0:
             raise ValueError("value size must be non-negative")
@@ -86,19 +83,24 @@ class Cache(collections.abc.MutableMapping):
             while self.__currsize + diffsize > maxsize:
                 self.popitem()
         else:
-            diffsize = size - self.__size[key]
+            diffsize = size - sizes[key]
             while self.__currsize + diffsize > maxsize:
                 self.popitem()
                 if key not in self.__data:
                     diffsize = size
         self.__data[key] = value
-        self.__size[key] = size
+        sizes[key] = size
         self.__currsize += diffsize
 
     def __delitem__(self, key):
-        size = self.__size.pop(key)
-        del self.__data[key]
-        self.__currsize -= size
+        sizes = self.__size
+        if sizes is None:
+            del self.__data[key]
+            self.__currsize -= 1
+        else:
+            size = sizes.pop(key)
+            del self.__data[key]
+            self.__currsize -= size
 
     def __contains__(self, key):
         return key in self.__data
@@ -149,7 +151,8 @@ class Cache(collections.abc.MutableMapping):
 
     def clear(self):
         self.__data.clear()
-        self.__size.clear()
+        if self.__size is not None:
+            self.__size.clear()
         self.__currsize = 0
 
     @property
