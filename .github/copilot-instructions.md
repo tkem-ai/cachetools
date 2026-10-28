@@ -30,7 +30,10 @@
 
 **Caches** (`__init__.py`): `Cache` is a `MutableMapping` with `maxsize`, `currsize`
 and `getsizeof`; `maxsize=0` and `math.inf` are valid, negative values raise
-`ValueError`, and a value's size must not change after insertion. Subclasses override
+`ValueError`, and a value's size must not change after insertion. With the default
+`getsizeof` (identity check against `Cache.getsizeof` in `__init__`), the private size
+dict is `None`: each item counts 1 and `getsizeof()` is not called; a constructor
+argument or subclass override enables a real size dict. Subclasses override
 `__setitem__`, `__delitem__`, `popitem()`, `clear()` and optionally `__getitem__`,
 binding parent methods via default parameters (`cache_setitem=Cache.__setitem__`); after
 the parent `__getitem__`, check the subclass's own bookkeeping (not `key in self`) to
@@ -51,8 +54,10 @@ shared by all instances.
 **`@cachedmethod`** (`_cachedmethod.py`, `_descriptor.py`): each variant defines a
 `Descriptor` with a nested per-instance `Wrapper`, constructed as
 `Wrapper(obj, descriptor)`. `_MethodDescriptor.__get__` stores it in `obj.__dict__` via
-`setdefault`; wrappers reached through `super()` go to
-`obj.__dict__["__cachetools_cachedmethods"]` keyed by descriptor. Class access returns
+`setdefault`; wrappers reached through `super()` are looked up in, or stored to,
+`obj.__dict__["__cachetools_cachedmethods"]` keyed by descriptor. Both paths report a
+missing or read-only `__dict__` via `__instance_dict_error` (`stacklevel=4`, so
+warnings point at the caller). Class access returns
 a lazily created `_Unbound` callable object, deliberately not a function so
 `create_autospec()` strips the receiver (#443); it takes the receiver from `*args` or by
 the wrapped method's first parameter name when passed as a keyword, binds via `__get__`
@@ -61,10 +66,11 @@ when aliased in another class body, and pickles/copies by reference. Pickle/deep
 `_MethodDescriptor.__reduce__` returns `(_lookup, (owner, attrname))`, so wrappers are
 rebuilt through their descriptor, counters reset, and lock, condition, `__wrapped__`
 and the nested `Wrapper` class are never serialized; `_lookup` must stay importable and
-reads the owner's *current* class dict. `__set_name__` on two names, or instances
-without a writable `__dict__`, raise `TypeError`; `@classmethod` use
-(`_ClassMethodDescriptor`, `info=False` only) and instances without `__dict__` are
-**deprecated** and warn instead. Stampede prevention uses a pending set per instance;
+reads the owner's *current* class dict. `__set_name__` on two names raises `TypeError`.
+Instances without a writable `__dict__` raise `TypeError` from `info=True` descriptors;
+the `info=False` descriptors (`_ClassMethodDescriptor`, `deprecated=True`) only warn and
+run a throwaway `Wrapper` instead, as does their **deprecated** `@classmethod` use.
+Stampede prevention uses a pending set per instance;
 `_condition`'s inner `wrapper(self, pending, /, ...)` takes `pending` positional-only
 so a method parameter of that name can be passed by keyword.
 
@@ -103,13 +109,16 @@ tox -e py -- tests/test_ttl.py -k expire   # posargs go to pytest
   `TestCase` per cache type; TTL tests use a manual `Timer`.
 - `test_cached.py`/`test_cachedmethod.py` cover all lock/condition/info combinations.
   Objects pickled by name must be module-level (`Cached`, `CachedChild`), not locals.
-- `test_func.py` calls decorators via `Callable[..., Any]`; stub checks need concrete
-  annotated tests (`test_decorator_method*`) without `# type: ignore`.
-- `test_threading.py`: join with `TIMEOUT` and assert threads finished; the condition
-  tests force a contended `wait()`, since `CountedCondition.wait_count` stays 0 for
-  single-threaded calls.
+- `test_func.py` calls decorators via `Callable[..., Any]`, so stub checks need concrete
+  annotated tests without `# type: ignore`: `CacheWrapperTest.test_decorator_method` in
+  `test_cached.py` and `FIFODecoratorTest.test_method_typed` in `test_func.py`.
+- `test_threading.py`: join with `TIMEOUT` and assert threads finished; its
+  `WaitCondition` forces a contended `wait()`, since the single-threaded
+  `CountedCondition.wait_count` assertions in `test_cached.py` and
+  `test_cachedmethod.py` stay 0.
 - Performance work: measure with `timeit` (best of 7) against a git worktree of the
-  previous release, before and after; keep hot paths free of avoidable Python-level
+  previous release, before and after; never benchmark in a VM (timings are
+  unreliable), keep hot paths free of avoidable Python-level
   calls, and do not trade documented subclass hooks or semantics for speed.
 
 ## Code Review
@@ -131,8 +140,9 @@ tox -e py -- tests/test_ttl.py -k expire   # posargs go to pytest
 - `copy.copy()` of an instance with an active `@cachedmethod` wrapper shares the
   wrapper; accepted.
 - Stacking `@cachedmethod` decorators is unsupported and untested.
-- `super()` and class access to `@cachedmethod` build and discard a `Wrapper` per call;
-  accepted (looking up the stored wrapper first was prototyped and declined).
+- Class access to `@cachedmethod` (`Cls.method(obj, ...)`) builds and discards a
+  `Wrapper` per call; accepted (looking up the stored wrapper first, as `super()`
+  does, was prototyped and reverted).
 - A `condition` must provide the full `threading.Condition` interface; `notify()` is
   reserved for future use. Do not propose relaxing the protocol.
 - `TTLCache`/`TLRUCache` read the timer through the `timer` property, not a cached
