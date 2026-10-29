@@ -42,6 +42,10 @@ class _WrapperBase:
         # wrappers
         return (self.__descriptor.__get__, (self.__obj,))
 
+    def __repr__(self):
+        wrapped = self.__wrapped__  # pyright: ignore[reportAttributeAccessIssue]
+        return f"<cachedmethod {wrapped!r} of {object.__repr__(self.__obj)}>"
+
     @property
     def cache(self):
         return self.__cache(self.__obj)

@@ -120,6 +120,10 @@ class _Unbound:
         # pickle and copy by reference, as functions are
         return (self.__descriptor.__get__, (None,))
 
+    def __repr__(self):
+        wrapped = self.__wrapped__  # pyright: ignore[reportAttributeAccessIssue]
+        return f"<cachedmethod {wrapped!r}>"
+
     # bind like a method when aliased in another class body
     def __get__(self, obj, objtype=None):
         if obj is None:

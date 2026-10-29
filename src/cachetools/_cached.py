@@ -42,6 +42,9 @@ class _WrapperBase:
     def __reduce__(self):
         return self.__qualname__
 
+    def __repr__(self):
+        return f"<cached {self.__wrapped__!r}>"
+
 
 class _BasicWrapper(_WrapperBase, _BasicMixin):
     def __init__(self, func, cache, key):
