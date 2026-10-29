@@ -440,6 +440,38 @@ class CacheWrapperTest(unittest.TestCase, DecoratorTestMixin):
         self.assertEqual(cached.get_static(1), 1)
         self.assertEqual(Cached.get_static(1), 1)
 
+    def test_autospec(self):
+        import unittest.mock
+
+        class Cached:
+            @cachetools.cached(self.cache(2))
+            def get(self, value):
+                return value
+
+            @cachetools.cached(self.cache(2), info=True)
+            def get_info(self, value):
+                return value
+
+            @staticmethod
+            @cachetools.cached(self.cache(2))
+            def get_static(value):
+                return value
+
+        mock = unittest.mock.create_autospec(Cached, instance=True)
+        mock.get.return_value = 42
+        self.assertEqual(mock.get(1), 42)
+        mock.get.assert_called_with(1)
+        self.assertEqual(mock.get(value=1), 42)
+        mock.get.assert_called_with(value=1)
+        mock.get_info.return_value = 43
+        self.assertEqual(mock.get_info(1), 43)
+        mock.get_info.assert_called_with(1)
+        mock.get_static.return_value = 44
+        self.assertEqual(mock.get_static(1), 44)
+        mock.get_static.assert_called_with(1)
+        with self.assertRaises(AttributeError):
+            mock.missing()
+
 
 class DictTest(unittest.TestCase, DecoratorTestMixin):
     def cache(self, minsize):
