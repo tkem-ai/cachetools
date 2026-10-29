@@ -196,6 +196,11 @@ class DecoratorTestMixin(SimplifiedTestCaseProtocol):
         self.assertIs(wrapper.cache_condition, cond)
         self.assertFalse(hasattr(wrapper, "cache_info"))
 
+    def test_decorator_repr(self):
+        for info in (False, True):
+            wrapper = cachetools.cached(self.cache(2), info=info)(self.func)
+            self.assertEqual(repr(wrapper), f"<cached {self.func!r}>")
+
     def test_decorator_clear(self):
         cache = self.cache(2)
         wrapper = cachetools.cached(cache)(self.func)

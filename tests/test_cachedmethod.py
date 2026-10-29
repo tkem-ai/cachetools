@@ -406,6 +406,16 @@ class MethodDecoratorTestMixin(SimplifiedTestCaseProtocol):
         self.assertIs(cached.get_lock_cond_info.cache_condition, cached.cond)
         self.assertTrue(hasattr(cached.get_lock_cond_info, "cache_info"))
 
+    def test_decorator_repr(self):
+        cached = Cached(self.cache(2))
+        obj = object.__repr__(cached)
+        wrapped = Cached.get.__wrapped__
+        self.assertEqual(repr(cached.get), f"<cachedmethod {wrapped!r} of {obj}>")
+        self.assertEqual(repr(Cached.get), f"<cachedmethod {wrapped!r}>")
+        wrapped = Cached.get_info.__wrapped__
+        self.assertEqual(repr(cached.get_info), f"<cachedmethod {wrapped!r} of {obj}>")
+        self.assertEqual(repr(Cached.get_info), f"<cachedmethod {wrapped!r}>")
+
     def test_decorator_clear(self):
         cache = self.cache(2)
         cached = Cached(cache)
