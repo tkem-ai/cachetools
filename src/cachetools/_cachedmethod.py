@@ -32,6 +32,9 @@ class _WrapperBase:
     """Wrapper base class providing the public cache attributes as properties."""
 
     def __init__(self, obj, descriptor, method, cache, key, lock=_none, cond=_none):
+        # types.MethodType() checks this on CPython only
+        if not callable(key):
+            raise TypeError("key must be callable")
         # as functools.update_wrapper(self, method), but without its loop
         self.__module__ = method.__module__
         self.__name__ = method.__name__
