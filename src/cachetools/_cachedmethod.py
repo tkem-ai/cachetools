@@ -14,11 +14,11 @@ import functools
 
 from ._decorator import (
     _BasicMixin,
-    _ConditionInfoMixin,
-    _ConditionMixin,
     _InfoMixin,
     _LockedInfoMixin,
     _LockedMixin,
+    _SharedConditionInfoMixin,
+    _SharedConditionMixin,
 )
 from ._descriptor import _MethodDescriptor
 
@@ -75,10 +75,10 @@ class _LockedWrapper(_WrapperBase, _LockedMixin):
         _LockedMixin.__init__(self, functools.partial(method, obj))
 
 
-class _ConditionWrapper(_WrapperBase, _ConditionMixin):
+class _ConditionWrapper(_WrapperBase, _SharedConditionMixin):
     def __init__(self, obj, descriptor, method, cache, key, lock, cond):
         _WrapperBase.__init__(self, obj, descriptor, method, cache, key, lock, cond)
-        _ConditionMixin.__init__(self, functools.partial(method, obj))
+        _SharedConditionMixin.__init__(self, functools.partial(method, obj))
 
 
 class _InfoWrapper(_WrapperBase, _InfoMixin):
@@ -93,10 +93,10 @@ class _LockedInfoWrapper(_WrapperBase, _LockedInfoMixin):
         _LockedInfoMixin.__init__(self, functools.partial(method, obj), info)
 
 
-class _ConditionInfoWrapper(_WrapperBase, _ConditionInfoMixin):
+class _ConditionInfoWrapper(_WrapperBase, _SharedConditionInfoMixin):
     def __init__(self, obj, descriptor, method, cache, key, lock, cond, info):
         _WrapperBase.__init__(self, obj, descriptor, method, cache, key, lock, cond)
-        _ConditionInfoMixin.__init__(self, functools.partial(method, obj), info)
+        _SharedConditionInfoMixin.__init__(self, functools.partial(method, obj), info)
 
 
 def _wrapper(method, cache, key, lock=None, cond=None, info=None):

@@ -549,7 +549,10 @@ often called with the same arguments:
    decorator is that `cache`, `lock` and `condition` are not objects
    but functions.  These will be called with `self` as their sole
    argument to retrieve the cache, lock and condition objects for the
-   respective instance.
+   respective instance.  Instances for which `condition(self)` returns
+   the same condition object coordinate pending calls on a shared
+   cache, i.e. a call that is already computing a cache key for one
+   instance is awaited by the others.
 
    .. note::
 
