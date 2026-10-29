@@ -416,6 +416,50 @@ class MethodDecoratorTestMixin(SimplifiedTestCaseProtocol):
         self.assertEqual(repr(cached.get_info), f"<cachedmethod {wrapped!r} of {obj}>")
         self.assertEqual(repr(Cached.get_info), f"<cachedmethod {wrapped!r}>")
 
+    def test_decorator_cond_slots(self):
+        class SlotsCondition:
+            __slots__ = ()  # cannot be weakly referenced
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                pass
+
+            def wait(self, timeout=None):
+                return True
+
+            def wait_for(self, predicate, timeout=None):
+                return predicate()
+
+            def notify(self, n=1):
+                pass
+
+            def notify_all(self):
+                pass
+
+        cond = SlotsCondition()
+
+        class Cached:
+            def __init__(self, cache):
+                self.cache = cache
+
+            @cachedmethod(lambda self: self.cache, condition=lambda _: cond)
+            def get(self, value):
+                return value
+
+            @cachedmethod(lambda self: self.cache, condition=lambda _: cond, info=True)
+            def get_info(self, value):
+                return value
+
+        cached = Cached(self.cache(2))
+        self.assertEqual(cached.get(1), 1)
+        self.assertEqual(cached.get(1), 1)
+        self.assertEqual(cached.get_info(2), 2)
+        self.assertEqual(cached.get_info(2), 2)
+        self.assertEqual(cached.get_info.cache_info().misses, 1)
+        self.assertEqual(cached.get_info.cache_info().hits, 1)
+
     def test_decorator_clear(self):
         cache = self.cache(2)
         cached = Cached(cache)
