@@ -1050,6 +1050,23 @@ class UnboundMethodTest(unittest.TestCase):
     def test_class_access_identity(self):
         self.assertIs(Cached.get, Cached.get)
         self.assertIs(Cached.get_info, Cached.get_info)
+
+    def test_class_call_after_delete(self):
+        class Local:
+            def __init__(self, cache):
+                self.cache = cache
+
+            @cachedmethod(lambda self: self.cache)
+            def get(self, value):
+                return value
+
+        get = Local.get
+        local = Local(Cache(2))
+        del Local.get
+        # the class attribute is gone, so the wrapper is kept as for super()
+        self.assertEqual(get(local, 1), 1)
+        self.assertEqual(get(local, 1), 1)
+        self.assertEqual(len(local.cache), 1)
         self.assertIs(Unhashable.get, Cached.get)
         self.assertIsNot(Cached.get, Cached.get_info)
 

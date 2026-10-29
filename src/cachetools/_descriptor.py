@@ -39,14 +39,13 @@ class _MethodDescriptor:
             # objtype is not used for instance lookups, so it need not be bound
             return self.__get_unbound()
 
-        descriptor = next(
-            (
-                cls.__dict__[self.__attrname]
-                for cls in type(obj).__mro__
-                if self.__attrname in cls.__dict__
-            ),
-            None,
-        )
+        attrname = self.__attrname
+        for cls in type(obj).__mro__:
+            if attrname in cls.__dict__:
+                descriptor = cls.__dict__[attrname]
+                break
+        else:
+            descriptor = None  # removed from the class after __set_name__
         if descriptor is self:
             # replace descriptor instance with wrapper in instance dict; in case
             # of a race condition where another thread already replaced the
