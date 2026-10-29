@@ -1,25 +1,32 @@
 # Code Review — cachetools 8.0.0 (development)
 
-**Date:** 2026-10-28
-**Reviewed:** `develop` at `7bc1326` ("Various documentation improvements.", rebased
-onto `505aece`; `__version__` still 7.2.7, no 8.0.0 changelog section yet).
+**Date:** 2026-10-29
+**Reviewed:** `develop` at `81aa2a5` (code unchanged since `7bc1326`, "Various
+documentation improvements.", rebased onto `505aece`; `__version__` still 7.2.7, no
+8.0.0 changelog section yet).
 
 **CI status:** All `tox` environments pass locally on CPython 3.14.4: `py` (391
-passed), `docs`, `doctest`, `pyright` (0 errors), `ruff`, `ruff-format`. GitHub
-Actions not checked (branch not pushed).
+passed), `docs`, `doctest`, `pyright` (0 errors), `ruff`, `ruff-format`; `py` also
+passes on CPython 3.11, 3.12 and 3.13. GitHub Actions is disabled on
+`tkem-ai/cachetools`, so there is no matrix run.
 
-**Coverage:** 100% except `_descriptor.py:32`, the pre-3.13 path where `@classmethod`
-calls `__get__(cls, type(cls))` on a descriptor without `__set_name__`; on < 3.13 that
-line is the only way into `_MethodDescriptor.__call__`, so the matrix covers both.
+**Coverage:** 100% on Python < 3.13 (branches included); on 3.13+ only
+`_descriptor.py:32` is uncovered, the pre-3.13 path where `@classmethod` calls
+`__get__(cls, type(cls))` on a descriptor without `__set_name__`. The matrix covers
+both.
 
-**Verified:** the refactored wrappers by a probe script: `@cached` on instance, static
-and class methods binds through `__get__` and `create_autospec(instance=True)` strips
-the receiver; module-level and class-attribute `@cached` wrappers pickle and deep-copy
-to themselves while local ones raise `PicklingError`, as with `functools.lru_cache`;
-`cached(None)` raises at decoration time; a non-sized custom cache fails only in
-`cache_info()`; a method parameter named `pending` still works with `condition`;
-wrong receivers and stacked decorators behave as described below; performance by the
-benchmarks below.
+**Verified:** the refactored wrappers by a probe script on 3.12 and 3.13: `@cached` on
+instance, static and class methods binds through `__get__` and
+`create_autospec(instance=True)` strips the receiver; module-level and class-attribute
+`@cached` wrappers pickle and deep-copy to themselves while local ones raise
+`AttributeError` ("Can't get local object"), as plain local functions do;
+`cached(None)` raises before decorating; a custom cache without `len()` fails only in
+`cache_info()`; a method parameter named `pending` still works with `condition`; wrong
+receivers, stacked decorators and descriptors without `__set_name__` behave as
+described below. Cache semantics by a differential trace of 100800 random operations
+on all seven cache classes (default and `len` sizes, `maxsize` 0, 1, 3, 10, 2.5 and
+infinity, timer advances): identical to v7.2.7, and caches pickled by v7.2.7 load.
+Performance by the benchmarks below.
 
 ## Code — Potential Issues
 
@@ -30,7 +37,7 @@ benchmarks below.
 | 3 | Low | `_decorator.py` `_ConditionMixin` / `_ConditionInfoMixin` via `@cachedmethod` | Pending sets are per wrapper, so two instances sharing one cache and condition do not coordinate pending keys. |
 | 4 | Info | `_MethodDescriptor.__get__` (class-access path) | `Cls.method(obj, ...)` builds and discards a wrapper per call before `obj.__dict__.setdefault()` returns the stored one: 2606 ns per hit against 440 through the instance and 975 via `super()`, which reuses its stored wrapper (*Maintainer Decisions*). |
 | 5 | Info | `_cachedmethod.py` `_wrapper` | `update_wrapper(descriptor, method)` runs *after* `_MethodDescriptor(wrapper)`, so a stacked `@cachedmethod` copies the inner descriptor's `__dict__` (factory, owner, name) over the outer's and the pair silently acts as the inner decorator alone. Calling `update_wrapper()` first would turn this into a `TypeError`, though with the misleading "class methods" message. Unsupported (*Maintainer Decisions*). |
-| 6 | Info | `_cached.py` `_WrapperBase.__reduce__` | Pickling by `__qualname__` means a wrapper rebound under another name, or whose original name was deleted, unpickles to the wrong object or fails; wrappers on local functions raise `PicklingError`. Same rules as plain functions. |
+| 6 | Info | `_cached.py` `_WrapperBase.__reduce__` | Pickling by `__qualname__` means a wrapper rebound under another name, or whose original name was deleted, unpickles to the wrong object or fails; wrappers on local functions raise `AttributeError`. Same rules as plain functions. |
 | 7 | Info | condition variants of `@cached` / `@cachedmethod` | Same-thread recursion on the same key deadlocks (`wait()` on its own pending marker). |
 | 8 | Info | `_MethodDescriptor.__get_unbound` | Lazy creation of the `_Unbound` object is unsynchronized; concurrent first class accesses may briefly see distinct, equivalent objects. Benign. |
 | 9 | Info | `_descriptor.py` `_Unbound.__call__` | By design, autospec'd instances accept any arguments, so autospec no longer checks arity. A wrong receiver (`Cls.method(1)`) raises `TypeError` "No `__dict__` attribute on 'int' instance". |
@@ -38,6 +45,7 @@ benchmarks below.
 | 11 | Info | `CacheInfo._make_info` | A cache without `__len__` is only reported, as `TypeError` from `len()`, when `cache_info()` runs; documented requirement. |
 | 12 | Info | `_cachedmethod.py` `_WrapperBase.__reduce__` | Unpickling and deep-copying rebuild wrappers through their descriptor, so `info=True` counters reset (asserted by tests). Acceptable. |
 | 13 | Info | `_MethodDescriptor.__reduce__` / `_lookup` | `_lookup` must stay importable and resolves through the owner's *current* class dict, so a pickle loaded while `Cls.method` is patched yields the patched attribute. A descriptor that never saw `__set_name__` pickles but fails to load with `AttributeError`. |
+| 14 | Info | `_MethodDescriptor.__get__` | A descriptor assigned after class creation never receives `__set_name__`, so any access, class access included, raises `TypeError`; in 7.x `info=False` descriptors fell back to a throwaway wrapper there. Undocumented use, asserted by `test_decorator_no_set_name`. |
 
 No implementation bugs found beyond the items above.
 
@@ -114,10 +122,11 @@ keyword-only `info: Literal[True]` overload precedes the `Literal[False]` defaul
 ## `CHANGELOG.rst`
 
 No 8.0.0 section yet (release-only). Breaking changes to tag when it is written: Python
-3.10 dropped; `@cachedmethod` with `@classmethod` or without a mutable `__dict__`
-raises `TypeError`; `@cached(cache=None)` raises `TypeError`; `info=True` requires
-`len()` on custom caches; `CacheInfo` is public; `@cached` wrappers are callable objects
-rather than functions.
+3.10 dropped; `@cachedmethod` with `@classmethod`, without a mutable `__dict__` or on a
+descriptor assigned after class creation (Code #14) raises `TypeError`;
+`@cached(cache=None)` raises `TypeError`; `info=True` requires `len()` on custom
+caches; `CacheInfo` is public; `@cached` wrappers are callable objects rather than
+functions.
 
 ## Keys & Func Modules
 

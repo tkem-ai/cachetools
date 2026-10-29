@@ -55,8 +55,9 @@ name-mangled attributes. `condition` without `lock` serves as both. Wrappers swa
 *before* setting the four public attributes, so stacked decorators keep their state.
 Wrappers are objects, not functions: `__get__` binds via `types.MethodType` (cache and
 counters shared by all instances) and `__reduce__` returns `__qualname__`, so they
-pickle by name like `functools.lru_cache`. `info=False` wrappers have no `cache_info`;
-`cache=None` raises `TypeError` at decoration time.
+pickle by name like `functools.lru_cache` (wrappers on local functions raise
+`AttributeError`). `info=False` wrappers have no `cache_info`; `cached(None)` raises
+`TypeError` before decorating.
 
 **`@cachedmethod`** (`_cachedmethod.py`, `_descriptor.py`): `_wrapper()` picks a
 factory `wrapper(obj, descriptor)` and returns `_MethodDescriptor(wrapper)`. Per-instance
@@ -64,9 +65,10 @@ wrappers expose `cache`, `cache_lock` and `cache_condition` as properties callin
 user's `cache(self)` etc. on every access; `cache_key` is `partial(key, obj)`, the mixin
 gets `partial(method, obj)`. The descriptor stores the wrapper in `obj.__dict__` via
 `setdefault`; `super()` lookups use `obj.__dict__["__cachetools_cachedmethods"]` keyed
-by descriptor; a missing or read-only `__dict__` raises `TypeError`. `@classmethod` over
-`@cachedmethod` raises `TypeError`: on 3.13+ through `__call__`, before through
-`__get__(cls, ...)` on a descriptor that never saw `__set_name__`. Class access returns
+by descriptor; a missing or read-only `__dict__` raises `TypeError`, as does any access
+to a descriptor that never received `__set_name__` (assigned after class creation).
+`@classmethod` over `@cachedmethod` raises `TypeError`: on 3.13+ through `__call__`,
+before through `__get__(cls, ...)` on such a descriptor. Class access returns
 a lazy `_Unbound` callable object, deliberately not a function so `create_autospec()`
 strips the receiver (#443); it takes the receiver positionally or by the wrapped
 method's first parameter name. Pickle/deepcopy (#417) rebuild wrappers through their
