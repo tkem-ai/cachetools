@@ -35,14 +35,7 @@ class _WrapperBase:
         # types.MethodType() checks this on CPython only
         if not callable(key):
             raise TypeError("key must be callable")
-        # as functools.update_wrapper(self, method), but without its loop
-        self.__module__ = method.__module__
-        self.__name__ = method.__name__
-        self.__qualname__ = method.__qualname__
-        self.__doc__ = method.__doc__
-        self.__type_params__ = getattr(method, "__type_params__", ())
-        self.__dict__.update(method.__dict__)
-        self.__wrapped__ = method
+        functools.update_wrapper(self, method)
         self.__obj = obj
         self.__descriptor = descriptor
         self.__cache = cache
