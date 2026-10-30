@@ -24,14 +24,10 @@ from ._decorator import (
 from ._descriptor import _MethodDescriptor
 
 
-def _none(_):
-    return None  # stands in for a missing lock or condition function
-
-
 class _WrapperBase:
     """Wrapper base class providing the public cache attributes as properties."""
 
-    def __init__(self, obj, descriptor, method, cache, key, lock=_none, cond=_none):
+    def __init__(self, obj, descriptor, method, cache, key, lock=None, cond=None):
         # types.MethodType() checks this on CPython only
         if not callable(key):
             raise TypeError("key must be callable")
@@ -40,8 +36,8 @@ class _WrapperBase:
         self.__descriptor = descriptor
         self.__cache = cache
         self.cache_key = types.MethodType(key, obj)
-        self.__lock = lock
-        self.__cond = cond
+        self.__lock = lock if lock is not None else lambda _: None
+        self.__cond = cond if cond is not None else lambda _: None
 
     def __reduce__(self):
         # rebuild via the descriptor instead of pickling unpicklable
