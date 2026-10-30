@@ -85,7 +85,6 @@ CI (GitHub Actions on `tkem/cachetools`) runs CPython 3.11–3.15, free-threaded
 
 ## Git
 
-- Target `develop` for 8.0 work and `master` for bugfix releases.
 - PRs reference an open issue (except trivial fixes), in separate commits:
   `Fix #123: ...`, `Tests for #123: ...`, `Docs for #123: ...`.
 - Run `tox` before pushing. Update this file in the same PR that changes a convention.
