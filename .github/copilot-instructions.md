@@ -1,10 +1,9 @@
 # Copilot Instructions for cachetools
 
 Memoizing collections and decorators, including `functools.lru_cache` variants. Pure
-Python ≥ 3.11, no runtime dependencies, `src/` layout, type stubs in `*.pyi`
-(`py.typed`). Single maintainer. `master` is the release branch, `develop` the 8.0 line.
-Keep this file under 100 lines: rules an agent would otherwise get wrong, not
-documentation. Delete a line once the code or the agent no longer needs it.
+Python ≥ 3.11, no runtime dependencies, `src/` layout, type stubs in `*.pyi`. Single
+maintainer; `master` is the release branch, `develop` the 8.0 line. Keep this file under
+100 lines: rules an agent would otherwise get wrong, not documentation.
 
 ## Commands
 
@@ -19,9 +18,9 @@ tox -e docs,doctest                        # docs build and doctests
 ```
 
 CI (GitHub Actions on `tkem/cachetools`) runs CPython 3.11–3.15, free-threaded
-3.13t–3.15t and PyPy 3.11; `partial`/`MethodType` argument checks differ on PyPy.
-Branch coverage is 100 %; on 3.13+ the pre-3.13 `@classmethod` line in
-`_MethodDescriptor.__get__` stays uncovered, CI covers it.
+3.13t–3.15t and PyPy 3.11, where `types.MethodType` skips the callable check that
+`functools.partial` makes. Branch coverage is 100 %; on 3.13+ only the pre-3.13
+`@classmethod` line in `_MethodDescriptor.__get__` is uncovered, CI covers it.
 
 ## Code Style
 
@@ -67,8 +66,7 @@ Branch coverage is 100 %; on 3.13+ the pre-3.13 `@classmethod` line in
   `docs/index.rst`. Objects pickled by name must be reachable from module level.
 - Stub checks need concrete annotated tests without `# type: ignore`, since
   `test_func.py` calls decorators via `Callable[..., Any]`.
-- Threading tests join with `TIMEOUT` and assert the thread finished; a
-  single-threaded run keeps `wait_count` at 0.
+- Threading tests join with `TIMEOUT` and assert the thread finished.
 - Performance: `timeit`, best of 7, on a pinned core (`taskset`), never in a VM,
   against a git worktree of the previous release. Never trade documented subclass
   hooks or semantics for speed.
@@ -78,8 +76,7 @@ Branch coverage is 100 %; on 3.13+ the pre-3.13 `@classmethod` line in
 - Never edit `CHANGELOG.rst` or bump `__version__`; both are release-only.
 - Never promise cross-version pickle compatibility or build on the byte format; any
   release, even a bugfix, may change it.
-- A review changes nothing; fix only when asked. Review format rules live in
-  `.github/instructions/copilot-review.instructions.md`.
+- A review changes nothing; fix only when asked.
 - **Maintainer Decisions** (do not re-raise): `copy.copy()` of an instance shares its
   active `@cachedmethod` wrapper; stacking `@cachedmethod` decorators is unsupported
   and untested; class access (`Cls.method(obj, ...)`) builds and discards a wrapper per
@@ -92,3 +89,12 @@ Branch coverage is 100 %; on 3.13+ the pre-3.13 `@classmethod` line in
 - PRs reference an open issue (except trivial fixes), in separate commits:
   `Fix #123: ...`, `Tests for #123: ...`, `Docs for #123: ...`.
 - Run `tox` before pushing. Update this file in the same PR that changes a convention.
+
+## Code Review
+
+- Reviews amend `.github/copilot-review.md` in place: header (date, commit, CI,
+  coverage, one *Verified* paragraph), then tables `# | Priority | Location | Finding`
+  ordered High, Medium, Low, Info. Renumber after changes; cross-reference as "Code #3".
+- Resolved issues are removed, never marked resolved; settled matters go to
+  *Maintainer Decisions* above. Brief rows, numbers only where they decide something,
+  current snapshot only; no new files or dated sections.
