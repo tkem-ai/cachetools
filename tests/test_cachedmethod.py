@@ -50,6 +50,10 @@ class Cached:
         raise ValueError("test error")
 
     @cachedmethod(lambda self: self.cache, condition=lambda self: self.cond, info=True)
+    def get_cond_error_info(self, _value):
+        raise ValueError("test error")
+
+    @cachedmethod(lambda self: self.cache, condition=lambda self: self.cond, info=True)
     def get_cond_info(self, value):
         return self.__get(value)
 
@@ -361,6 +365,26 @@ class MethodDecoratorTestMixin(SimplifiedTestCaseProtocol):
         self.assertEqual(cached.cond.count, 4)
         self.assertEqual(cached.cond.wait_count, 0)
         self.assertEqual(cached.cond.notify_count, 2)
+
+    def test_decorator_cond_error_info(self):
+        cache = self.cache(2)
+        cached = Cached(cache)
+        maxsize = cache.maxsize if isinstance(cache, Cache) else None
+
+        with self.assertRaises(ValueError):
+            cached.get_cond_error_info(0)
+        self.assertEqual(cached.cond.count, 2)
+        self.assertEqual(cached.cond.wait_count, 0)
+        self.assertEqual(cached.cond.notify_count, 1)
+        self.assertEqual(cached.get_cond_error_info.cache_info(), (0, 1, maxsize, 0))
+
+        # verify pending set is cleaned up, otherwise this might deadlock
+        with self.assertRaises(ValueError):
+            cached.get_cond_error_info(0)
+        self.assertEqual(cached.cond.count, 5)
+        self.assertEqual(cached.cond.wait_count, 0)
+        self.assertEqual(cached.cond.notify_count, 2)
+        self.assertEqual(cached.get_cond_error_info.cache_info(), (0, 2, maxsize, 0))
 
     def test_decorator_wrapped(self):
         cache = self.cache(2)
