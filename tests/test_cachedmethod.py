@@ -1,3 +1,4 @@
+import threading
 import unittest
 import warnings
 from collections.abc import Callable
@@ -361,6 +362,37 @@ class MethodDecoratorTestMixin(SimplifiedTestCaseProtocol):
         self.assertEqual(cached.cond.count, 4)
         self.assertEqual(cached.cond.wait_count, 0)
         self.assertEqual(cached.cond.notify_count, 2)
+
+    def test_decorator_lock_cond_unrelated(self):
+        # a threading.Condition not associated with lock fails on notify_all()
+        class Unrelated:
+            def __init__(self, cache):
+                self.cache = cache
+                self.lock = threading.Lock()
+                self.cond = threading.Condition()
+
+            @cachedmethod(
+                lambda self: self.cache,
+                lock=lambda self: self.lock,
+                condition=lambda self: self.cond,
+            )
+            def get(self, value):
+                return value
+
+            @cachedmethod(
+                lambda self: self.cache,
+                lock=lambda self: self.lock,
+                condition=lambda self: self.cond,
+                info=True,
+            )
+            def get_info(self, value):
+                return value
+
+        unrelated = Unrelated(self.cache(2))
+        with self.assertRaises(RuntimeError):
+            unrelated.get(0)
+        with self.assertRaises(RuntimeError):
+            unrelated.get_info(1)  # key 0 was stored before notify_all() raised
 
     def test_decorator_wrapped(self):
         cache = self.cache(2)
