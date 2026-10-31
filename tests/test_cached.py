@@ -1,3 +1,4 @@
+import threading
 import unittest
 
 import cachetools
@@ -147,6 +148,21 @@ class DecoratorTestMixin(SimplifiedTestCaseProtocol):
         self.assertEqual(lock.count, 4)
         self.assertEqual(cond.wait_count, 0)
         self.assertEqual(cond.notify_count, 2)
+
+    def test_decorator_lock_cond_unrelated(self):
+        # a threading.Condition not associated with lock fails on notify_all()
+        cache = self.cache(2)
+        lock = threading.Lock()
+        cond = threading.Condition()
+        wrapper = cachetools.cached(cache, lock=lock, condition=cond)(self.func)
+        with self.assertRaises(RuntimeError):
+            wrapper(0)
+
+        wrapper = cachetools.cached(cache, lock=lock, condition=cond, info=True)(
+            self.func
+        )
+        with self.assertRaises(RuntimeError):
+            wrapper(1)  # key 0 was stored before notify_all() raised
 
     def test_decorator_wrapped(self):
         cache = self.cache(2)
