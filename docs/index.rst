@@ -364,7 +364,11 @@ often called with the same arguments:
 
    If no separate `lock` parameter is provided, `condition` must also
    implement the `context manager`_ protocol, and will also be used to
-   guard access to the cache.
+   guard access to the cache.  If both are provided, the `condition`
+   variable's :meth:`wait()` and :meth:`notify_all()` methods are
+   called while `lock` is held, so a :class:`threading.Condition` must
+   be associated with that lock, i.e. created as
+   ``threading.Condition(lock)``.
 
    The decorator's `cache`, `key`, `lock` and `condition` parameters
    are also available as :attr:`cache`, :attr:`cache_key`,
@@ -556,7 +560,10 @@ often called with the same arguments:
       As with :func:`cached`, the context manager obtained by calling
       `lock(self)` will only guard access to the cache itself.  It is
       the user's responsibility to handle concurrent calls to the
-      underlying wrapped method in a multithreaded environment.
+      underlying wrapped method in a multithreaded environment.  Also
+      as with :func:`cached`, a :class:`threading.Condition` returned
+      by `condition(self)` must be associated with the lock returned
+      by `lock(self)`.
 
    Similarly to the :func:`cached` function decorator, the `cache`,
    `key`, `lock` and `condition` parameters are also available as
