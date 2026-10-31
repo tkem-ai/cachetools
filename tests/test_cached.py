@@ -298,6 +298,28 @@ class CacheWrapperTest(unittest.TestCase, DecoratorTestMixin):
         self.assertEqual(wrapper.cache_info(), (0, 0, 2, 0))
         self.assertEqual(lock.count, 13)
 
+    def test_decorator_cond_error_info(self):
+        cache = self.cache(2)
+        lock = cond = CountedCondition()
+        wrapper = cachetools.cached(cache, condition=cond, info=True)(self.error_func)
+
+        with self.assertRaises(ValueError):
+            wrapper(0)
+        self.assertEqual(len(cache), 0)
+        self.assertEqual(lock.count, 2)
+        self.assertEqual(cond.wait_count, 0)
+        self.assertEqual(cond.notify_count, 1)
+        self.assertEqual(wrapper.cache_info(), (0, 1, 2, 0))
+
+        # verify pending set is cleaned up, otherwise this might deadlock
+        with self.assertRaises(ValueError):
+            wrapper(0)
+        self.assertEqual(len(cache), 0)
+        self.assertEqual(lock.count, 5)
+        self.assertEqual(cond.wait_count, 0)
+        self.assertEqual(cond.notify_count, 2)
+        self.assertEqual(wrapper.cache_info(), (0, 2, 2, 0))
+
     def test_decorator_lock_cond_info(self):
         cache = self.cache(2)
         lock = CountedLock()
