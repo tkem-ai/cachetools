@@ -717,6 +717,9 @@ often called with the same arguments:
       provide a mutable :attr:`__dict__` attribute is no longer
       supported, and now raises a :exc:`TypeError`.
 
+      Passing a `cache` that is not callable, such as :const:`None`,
+      now raises a :exc:`TypeError` when the method is decorated.
+
 .. autoclass:: CacheInfo
 
    A named tuple with the fields `hits`, `misses`, `maxsize` and
