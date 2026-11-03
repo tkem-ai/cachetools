@@ -1152,3 +1152,15 @@ class ClassMethodTest(unittest.TestCase):
 
         with self.assertRaisesRegex(TypeError, "class method"):
             cached.get_class(42)
+
+        with self.assertRaisesRegex(TypeError, "class method"):
+            self.Cached.get_class(42)  # type: ignore
+
+    def test_classmethod_keyword_self(self):
+        cached = self.Cached({})
+
+        with self.assertRaisesRegex(TypeError, "class method"):
+            cached.get_class(self=42)  # type: ignore
+
+        with self.assertRaisesRegex(TypeError, "class method"):
+            self.Cached.get_class(self=42)  # type: ignore
