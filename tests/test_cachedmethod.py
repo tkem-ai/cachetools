@@ -988,6 +988,29 @@ class WeakRefMethodTest(unittest.TestCase):
 
 
 class NoneMethodTest(unittest.TestCase):
+    def test_none_decorator(self):
+        # a non-callable cache is rejected at decoration time, as by cached()
+        with self.assertRaisesRegex(TypeError, "callable"):
+            cachedmethod(None)  # type: ignore
+
+        with self.assertRaisesRegex(TypeError, "callable"):
+            cachedmethod(None, info=True)  # type: ignore
+
+        with self.assertRaisesRegex(TypeError, "callable"):
+            cachedmethod(Cache(2))  # type: ignore
+
+    def test_none_call(self):
+        # cache(self) returning None is no longer supported since v7.0.0
+        cached = Cached(None)
+
+        with self.assertRaises(TypeError):
+            cached.get(1)
+
+        with self.assertRaises(TypeError):
+            cached.get_info(1)
+
+        self.assertEqual(cached.count, 0)
+
     def test_none_info(self):
         cached = Cached(None)
         wrapper = cached.get_info
