@@ -78,8 +78,10 @@ class _MethodDescriptor:
     def _lookup(owner, name):
         return owner.__dict__[name]
 
-    # called for @classmethod since Python 3.13
-    def __call__(self, *args, **kwargs):
+    # called for @classmethod since Python 3.13; the receiver is taken
+    # positional-only so a keyword argument named "self" reports the
+    # same error instead of "got multiple values for argument 'self'"
+    def __call__(self, /, *args, **kwargs):
         raise TypeError("Decorating class methods is not supported")
 
     def __get_unbound(self):
