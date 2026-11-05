@@ -1,24 +1,22 @@
 # Code Review — cachetools 8.0.0 (development)
 
-**Date:** 2026-11-03
-**Reviewed:** `develop` at `45859e5` ("Improve cachetools.func tests."), based on
-`dev/v7.2.9` at `825bf66` ("Tests for #451"); `__version__` 8.0.0, CHANGELOG has the
-unreleased 8.0.0 section.
+**Date:** 2026-11-05
+**Reviewed:** `develop` at `266ce42` ("Add AGENTS.md, keep only review guidelines in
+copilot-instructions.md."), based on `dev/v7.3.0` at `0de0f96` ("Minor type stub
+improvements."); `__version__` 8.0.0, CHANGELOG has the unreleased 8.0.0 section.
 
-**CI status:** All `tox` environments pass locally on CPython 3.11.2: `py` (412
+**CI status:** All `tox` environments pass locally on CPython 3.14.6: `py` (413
 passed), `docs`, `doctest`, `pyright` (0 errors, 0 warnings), `ruff`, `ruff-format`;
-`py` also passes on CPython 3.12.3. GitHub Actions is green for `develop` at
-`589ee09` (this tree plus the previous review) on the full matrix (CPython 3.11–3.15,
-3.13t–3.15t, PyPy 3.11).
+`py` also passes on CPython 3.11.15, 3.12.13 and PyPy 3.11.15. GitHub Actions is green
+for `develop` at `266ce42` on the full matrix (CPython 3.11–3.15, 3.13t–3.15t, PyPy
+3.11).
 
 **Coverage:** 100% on Python < 3.13 (branches included); on 3.13+ only
 `_descriptor.py:36` is uncovered, the pre-3.13 path where `@classmethod` calls
 `__get__(cls, type(cls))` on a descriptor without `__set_name__`. The matrix covers
 both.
 
-**Verified:** by probe scripts on 3.11, 3.12 and 3.14; since then only
-`_MethodDescriptor.__call__` changed (receiver now positional-only), checked by reading
-and on 3.11 and 3.12, where `Cls.cm(self=1)` gives the class-method message. `@cached`
+**Verified:** by probe scripts rerun on 3.11, 3.12 and 3.14 against this code. `@cached`
 on instance, static and class methods binds through `__get__` (autospec asserted by
 `test_autospec`); module-level and class-attribute `@cached` wrappers pickle and
 deep-copy to themselves, local ones fail like plain local functions (`AttributeError`
@@ -32,9 +30,13 @@ by 7.2.7 (`_HashedTuple`, eight shapes with kwargs and types) load into `LRUCach
 `TTLCache` and are found by the plain-tuple keys without duplicate entries. Cache
 semantics by a differential trace of 100800 random operations on all seven cache
 classes (default and `len` sizes, `maxsize` 0, 1, 3, 10, 2.5 and infinity, timer
-advances) under a fixed `PYTHONHASHSEED`, with the same cache code: identical to v7.2.8 (see Code #11 for why the seed matters). Performance by the
-benchmarks below; against the previous release every measured operation is at least as
-fast except method access to `@cached` wrappers (Performance #1).
+advances) under a fixed `PYTHONHASHSEED`: identical to `dev/v7.3.0` at `0de0f96`, and
+identical to v7.2.8 except for `LFUCache`, whose tie-break now evicts the least
+recently used of the least used keys (272 of 100800 trace lines; a reference model
+agreed on all 37022 evictions of 200 further random traces of retrievals, updates and
+inserts). Performance by the benchmarks below; against the previous release every
+measured operation is at least as fast except method access to `@cached` wrappers
+(Performance #1).
 
 ## Code — Potential Issues
 
@@ -50,15 +52,16 @@ fast except method access to `@cached` wrappers (Performance #1).
 | 8 | Info | `TTLCache.__delitem__` / `TLRUCache.__delitem__` | Deleting a present-but-expired key removes it and raises `KeyError`, consistent with `key in cache`; `pop(key, default)` and `del` differ around the expiry instant. Intentional. |
 | 9 | Info | `_MethodDescriptor.__reduce__` / `_lookup` | `_lookup` must stay importable and resolves through the owner's *current* class dict, so a pickle loaded while `Cls.method` is patched yields the patched attribute, and after `del Cls.method` instances holding the wrapper still call it but no longer pickle (`KeyError`). A descriptor that never saw `__set_name__` pickles but fails to load with `AttributeError`. |
 | 10 | Info | `_MethodDescriptor.__get__` | A descriptor assigned after class creation never receives `__set_name__`, so any access, class access included, raises `TypeError`. Undocumented use, asserted by `test_decorator_no_set_name`. After `del Cls.method` an already obtained class callable keeps working through the `super()` path (`test_class_call_after_delete`). |
-| 11 | Info | `LFUCache.popitem` | Among equally used keys the victim is `next(iter(link.keys))`, so with `str` keys it varies between processes under hash randomization. Documented in code as arbitrary. |
-| 12 | Info | `cachedmethod()` / `_cachedmethod.py` `_WrapperBase` properties | Unlike `cached(None)`, a non-callable `cache` such as `cachedmethod(None)` is accepted at decoration and fails at the first method access with `'NoneType' object is not callable`; `cache(self)` returning `None` (unsupported since 7.0) fails at the first call with `'NoneType' object is not subscriptable`. Both are `TypeError`s, only later and less specific. |
+| 11 | Info | `cachedmethod()` / `_cachedmethod.py` `_WrapperBase` properties | Unlike `cached(None)`, a non-callable `cache` such as `cachedmethod(None)` is accepted at decoration and fails at the first method access with `'NoneType' object is not callable`; `cache(self)` returning `None` (unsupported since 7.0) fails at the first call with `'NoneType' object is not subscriptable`. Both are `TypeError`s, only later and less specific. |
 
 ## Performance
 
-Hot-path costs measured on 2026-10-31 on the same hot-path code on CPython 3.14.4, ns per operation, best of 7 (`timeit`, one pinned core; repeat runs
-agree within about 5%). Caches hold 100 items for reads and updates and are full
-(`maxsize=100`) for evicting inserts, with new keys from `itertools.count()` (19 ns
-included); decorators use `LRUCache(1024)` and a one-argument function.
+Hot-path costs measured on 2026-10-31 on CPython 3.14.4, ns per operation, best of 7
+(`timeit`, one pinned core; repeat runs agree within about 5%). The decorator and cache
+code is unchanged since, except `LFUCache`, whose column predates the `OrderedDict`
+tie-break and is not remeasured here. Caches hold 100 items for reads and updates and
+are full (`maxsize=100`) for evicting inserts, with new keys from `itertools.count()`
+(19 ns included); decorators use `LRUCache(1024)` and a one-argument function.
 
 | Operation | `dict` | `Cache` | `LRU` | `LFU` | `TTL` | `TLRU` |
 |---|---|---|---|---|---|---|
@@ -116,7 +119,7 @@ default timer, and `func.pyi` covers both `@lru_cache` and `@lru_cache(...)`.
 | 2 | Low | `@cached(info=True)` with a mapping lacking `__len__` is tested only through `@cachedmethod` (`NoneMethodTest`). |
 | 3 | Info | `currsize` and `__repr__` on timed caches are never asserted to expire on their own; every such assertion follows `len()`, `clear()` or `__setitem__`. |
 | 4 | Info | `UnboundMethodTest` exercises class access (`Cls.method(obj, ...)`) only for the plain and `info=True` variants; class access dispatches through the same `_Unbound` object for every variant, so the gap is small. |
-| 5 | Info | `NoneMethodTest.test_none_info` asserts only that `cache_info()` raises `TypeError` when `cache(self)` returns `None`; that the call itself fails, and that `cachedmethod(None)` fails at first access (Code #12), is unasserted. |
+| 5 | Info | `NoneMethodTest.test_none_info` asserts only that `cache_info()` raises `TypeError` when `cache(self)` returns `None`; that the call itself fails, and that `cachedmethod(None)` fails at first access (Code #11), is unasserted. |
 
 ## Docs (`docs/index.rst`)
 
@@ -134,7 +137,8 @@ requirement and public `CacheInfo`. Not mentioned, release-only to add: `@cached
 wrappers are callable objects rather than functions (`inspect.isfunction()` is
 `False`, `type()` changed); `info=False` wrappers no longer carry a `cache_info`
 attribute set to `None`; a `@cachedmethod` descriptor assigned after class creation
-raises `TypeError` (Code #10); and no performance bullet, although key functions return
+raises `TypeError` (Code #10); the `LFUCache` tie-break inherited from `dev/v7.3.0`,
+unless 7.3.0 ships first; and no performance bullet, although key functions return
 plain tuples and the decorator hot paths were reworked. `__repr__` on both wrapper kinds
 is a non-breaking addition.
 
