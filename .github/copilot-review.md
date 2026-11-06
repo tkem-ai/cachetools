@@ -1,14 +1,13 @@
 # Code Review — cachetools 8.0.0
 
 **Date:** 2026-11-06
-**Reviewed:** `develop` at `f4217fa` ("Prepare v8.0.0.", `__version__` 8.0.0, changelog
-dated 2026-11-06), based on `master` at `7f6228e` ("Update copilot instructions and
-review."), i.e. v7.3.0.
+**Reviewed:** `develop` at `398f506` ("Post v8.0.0 corrections."), based on `master`
+at `1ce79ef`, tagged v8.0.0; `__version__` 8.0.0, changelog dated 2026-11-06.
 
 **CI status:** All `tox` environments pass locally on CPython 3.14.4 (`py`: 416 passed;
 pyright 0 errors, 0 warnings); `py` also passes on 3.11.15 and 3.12.13. GitHub Actions
-has not run for `f4217fa` (not pushed); the same code at `3eae540` was green on the
-full matrix. **Coverage:** 100% on Python < 3.13; on 3.13+ only `_descriptor.py:36`,
+is green for `398f506` on the full matrix (CPython 3.11–3.15, 3.13t–3.15t, PyPy
+3.11). **Coverage:** 100% on Python < 3.13; on 3.13+ only `_descriptor.py:36`,
 the pre-3.13 `@classmethod` path.
 
 ## Code — Potential Issues
@@ -18,12 +17,12 @@ the pre-3.13 `@classmethod` path.
 | 1 | Low | `Cache.__setitem__` / `__delitem__` | Size accounting assumes a value's size is stable after insertion; mutating cached values in place desyncs `currsize`. Documented footgun. |
 | 2 | Low | `_decorator.py` `_ConditionMixin` / `_ConditionInfoMixin` via `@cachedmethod` | Pending sets are per wrapper, so two instances sharing one cache and condition do not coordinate pending keys. |
 | 3 | Low | condition variants of `@cached` / `@cachedmethod` | Same-thread recursion on the same key hangs on its own pending marker, where the `lock` variants raise `RecursionError`. Suggested fix: make the pending set a dict of key to `threading.get_ident()` and let the owning thread call the function uncached instead of waiting; the hit path stays unchanged, a miss pays one `get_ident()` call (unmeasured). |
-| 4 | Low | `Cache` (inherited `items()` / `values()`) | Both views read through `__getitem__`, so iterating them (or `dict(cache)`) counts as a use of every item: `LRUCache` and `TLRUCache` fall back to insertion order and every `LFUCache` count increments. `keys()`, `in` and `repr()` do not. Undocumented. Suggested fix: document it in the `Cache` section, or for 8.0 override `items()` and `values()` with views that read via `Cache.__getitem__` for each key of `iter(self)`, a potentially breaking change since subclass `__getitem__` overrides would no longer see iteration (untested). |
+| 4 | Low | `Cache` (inherited `items()` / `values()`) | Both views read through `__getitem__`, so iterating them (or `dict(cache)`) counts as a use of every item: `LRUCache` and `TLRUCache` fall back to insertion order and every `LFUCache` count increments. `keys()`, `in` and `repr()` do not. Undocumented. Suggested fix: document it in the `Cache` section, or in a major release override `items()` and `values()` with views that read via `Cache.__getitem__` for each key of `iter(self)`, a potentially breaking change since subclass `__getitem__` overrides would no longer see iteration (untested). |
 | 5 | Info | `_MethodDescriptor.__get__` (class-access path) | `Cls.method(obj, ...)` builds and discards a wrapper per call before `obj.__dict__.setdefault()` returns the stored one: 2003 ns per hit against 313 through the instance and 622 via `super()`, which reuses its stored wrapper (*Maintainer Decisions*). |
 | 6 | Info | `_cachedmethod.py` `_wrapper` | `update_wrapper(descriptor, method)` runs *after* `_MethodDescriptor(wrapper)`, so a stacked `@cachedmethod` copies the inner descriptor's `__dict__` (factory, owner, name) over the outer's and the pair silently acts as the inner decorator alone. Unsupported (*Maintainer Decisions*). |
 | 7 | Info | `_cached.py` `_WrapperBase.__reduce__` | Pickling by `__qualname__` means a wrapper rebound under another name, or whose original name was deleted, unpickles to the wrong object or fails. A wrapped callable without `__qualname__` (e.g. a `functools.partial`) fails with `AttributeError`, also for `copy.copy()` and `copy.deepcopy()` of the wrapper or of anything holding it. |
 | 8 | Info | `_descriptor.py` `_Unbound.__call__` / `_MethodDescriptor.__call__` | By design, autospec'd instances accept any arguments, so autospec no longer checks arity. A wrong receiver (`Cls.method(1)`) raises `TypeError` "No `__dict__` attribute on 'int' instance"; `@staticmethod`, `@property` or any function decorator that calls the descriptor directly reports the "class methods" message. |
-| 9 | Info | `_MethodDescriptor.__get__` | A descriptor assigned after class creation (e.g. by a class decorator) never receives `__set_name__`, so any access, `hasattr(Cls, name)` included, raises `TypeError` until `__set_name__` is called by hand. Undocumented use, asserted by `test_decorator_no_set_name`. After `del Cls.method` an already obtained class callable keeps working through the `super()` path (`test_class_call_after_delete`). |
+| 9 | Info | `_MethodDescriptor.__get__` | A descriptor assigned after class creation (e.g. by a class decorator) never receives `__set_name__`, so any access, `hasattr(Cls, name)` included, raises `TypeError` until `__set_name__` is called by hand. In the 8.0.0 changelog but not in the docs; asserted by `test_decorator_no_set_name`. After `del Cls.method` an already obtained class callable keeps working through the `super()` path (`test_class_call_after_delete`). |
 | 10 | Info | `cachedmethod()` / `_cachedmethod.py` `_WrapperBase` properties | Unlike `cached(None)`, a non-callable `cache` such as `cachedmethod(None)` is accepted at decoration and at attribute access, and fails at the first call with `'NoneType' object is not callable`; `cache(self)` returning `None` (unsupported since 7.0) fails at the first call with `'NoneType' object is not subscriptable`. Both are `TypeError`s, only later and less specific. |
 
 ## Performance
@@ -77,7 +76,7 @@ Caches hold 100 items (`maxsize=100` for evicting inserts, new keys from
 |---|----------|---------|
 | 1 | Info | The `self` keyword tests (`test_self_keyword`, #451) cover the default `@cached` and `@cachedmethod` wrappers and the class call only; the positional-only receivers of the lock, condition and `info` mixin `__call__` methods remain unguarded. |
 | 2 | Info | `__repr__` on timed caches is never asserted to expire on its own, and `currsize` only indirectly, through `cache_info()` in `test_func.py`'s `test_ttl_expire`; the cache tests assert both after `len()`, `clear()` or `__setitem__`. |
-| 3 | Info | `NoneMethodTest.test_none_info` asserts only that `cache_info()` raises `TypeError` when `cache(self)` returns `None`; that the call itself fails, and that `cachedmethod(None)` fails at first access (Code #10), is unasserted. |
+| 3 | Info | `NoneMethodTest.test_none_info` asserts only that `cache_info()` raises `TypeError` when `cache(self)` returns `None`; that the call itself fails, and that `cachedmethod(None)` fails at the first call (Code #10), is unasserted. |
 
 ## Docs (`docs/index.rst`)
 
