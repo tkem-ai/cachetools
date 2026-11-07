@@ -8,8 +8,8 @@ on `master` at `1ce79ef`, tagged v8.0.0; `__version__` 8.0.0, changelog dated
 **CI status:** All `tox` environments pass locally on CPython 3.14.6 (`py`: 416 passed;
 pyright 0 errors, 0 warnings); `py` also passes on 3.11.15, 3.12.13 and PyPy 3.11.15.
 GitHub Actions is green for `71c8d6f` on the full matrix (CPython 3.11–3.15,
-3.13t–3.15t, PyPy 3.11). **Coverage:** 100% on Python < 3.13; on 3.13+ only `_descriptor.py:36`,
-the pre-3.13 `@classmethod` path.
+3.13t–3.15t, PyPy 3.11). **Coverage:** 100% on Python < 3.13; on 3.13+ only
+`_descriptor.py:36`, the pre-3.13 `@classmethod` path.
 
 ## Code — Potential Issues
 
