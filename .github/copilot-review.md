@@ -2,8 +2,8 @@
 
 **Date:** 2026-11-10
 **Reviewed:** `develop`, i.e. `master` at `1ce79ef` ("Add AGENTS.md, update Copilot
-instructions and review.", tagged v8.0.0) plus this review commit; `__version__`
-8.0.0, changelog dated 2026-11-06.
+instructions and review.", tagged v8.0.0) plus "Exclude AGENTS.md form source
+distribution." and this review commit; `__version__` 8.0.0, changelog dated 2026-11-06.
 
 **CI status:** All `tox` environments pass locally on CPython 3.14.6 (`py`: 416 passed;
 pyright 0 errors, 0 warnings); `py` also passes on 3.11.15, 3.12.13 and PyPy 3.11.15.
