@@ -1,6 +1,6 @@
 # Code Review — cachetools 8.0.0
 
-**Date:** 2026-11-07
+**Date:** 2026-11-10
 **Reviewed:** `develop`, i.e. `master` at `1ce79ef` ("Add AGENTS.md, update Copilot
 instructions and review.", tagged v8.0.0) plus this review commit; `__version__`
 8.0.0, changelog dated 2026-11-06.
@@ -84,3 +84,4 @@ unchanged. Caches hold 100 items (`maxsize=100` for evicting inserts, new keys f
 |---|----------|---------|
 | 1 | Low | Neither `@cached` nor `cachetools.func.*_cache` mention decorating methods, which now bind explicitly through `__get__`; a one-line caveat that cache and counters are then shared across instances would help. |
 | 2 | Low | The `cached` section still speaks of a "memoizing wrapper function" whose "wrapped function is instrumented", while the result is a callable object; and `cache_lock` is described as exposing the `lock` parameter, but with `condition` alone it is the condition object (asserted by tests). |
+| 3 | Info | The `README.rst` example is a plain `code-block`, outside the Sphinx doctest run, and its `fib` and PyOWM snippets have no doctested counterpart in `docs/index.rst`; it runs correctly on this tree with `urlopen` and `pyowm` stubbed, but only the by-hand sync rule in `AGENTS.md` guards it. |
