@@ -1,22 +1,22 @@
 # Code Review — cachetools 8.0.0
 
-**Date:** 2026-11-12, `__version__` 8.0.0
+**Date:** 2026-11-13, `__version__` 8.0.0
 **Reviewed:** `develop`, i.e. v8.0.0 (`1ce79ef`) plus "Exclude AGENTS.md from source
 distribution.", "Fix #466: Note that shallow copies share cached methods.", "Fix #473:
 Add Cache.__copy__() to stop shallow copies sharing internal state.", "Fix #474: Fix
 deep-copying and pickling LFUCache with many use counts." and this review commit.
 
-**CI status:** All `tox` environments pass locally on CPython 3.14.4 (`py`: 445 passed;
-pyright 0 errors, 0 warnings); `py` also passes on 3.11.15 and 3.12.13. GitHub Actions
-has not run for this tree: the last green `develop` run (`2dd5815`) lacks the shared
-callables in `__copy__`, unverified on 3.13, 3.15, the free-threaded builds and PyPy.
-**Coverage:** 100% on 3.11 and 3.12; on 3.14 only `_descriptor.py:36` (pre-3.13 path).
+**CI status:** All `tox` environments pass locally on CPython 3.14.6 (`py`: 445 passed;
+pyright 0 errors, 0 warnings); `py` also passes on 3.11.15, 3.12.13, 3.13.17 and PyPy
+3.11.15. GitHub Actions is green for the reviewed code (mirror run 154: 3.11–3.15,
+free-threaded 3.13t–3.15t, PyPy 3.11); it has not run for this review commit.
+**Coverage:** 100% on 3.11, 3.12 and PyPy; on 3.13 and 3.14 only `_descriptor.py:36`.
 
 ## Code — Potential Issues
 
 | # | Priority | Location | Finding |
 |---|----------|----------|---------|
-| 1 | Low | `Cache.__copy__(*shared)` | Shares keys, values, `getsizeof`, `choice`, `timer` and `ttu` with the original and deep-copies everything else, subclass attributes included: a subclass holding a lock raises `TypeError: cannot pickle '_thread.lock' object` unless it overrides `__copy__` to pass the lock as `shared`. That hook is untested and absent from the stubs, and `docs/index.rst` does not mention shallow copies of caches at all. `_TimedCache.__copy__` takes the timer function from `_Timer.__reduce__()[1]`, so it depends on that pickle format. |
+| 1 | Medium | `Cache.__copy__(*shared)`, also released in v7.3.1 | Shares keys, values, `getsizeof`, `choice`, `timer` and `ttu` and deep-copies everything else, subclass attributes included, which v8.0.0 shared: `copy.copy()` of a subclass holding a lock now raises `TypeError: cannot pickle '_thread.lock' object`, and one holding an owner or client object silently duplicates it. The `shared` hook that avoids this is untested and absent from the stubs, `docs/index.rst` does not mention shallow copies of caches, and `_TimedCache.__copy__` depends on the `_Timer.__reduce__()` format. Suggested fix, as in `collections.UserDict.__copy__`: build the copy with `cls.__new__()`, share `__dict__` and let each class replace only its own state (data and sizes, order, index and keys, rebuilt LFU and TTL links, TLRU items and heap, a fresh `_Timer`), dropping `shared`. A prototype (+64 lines) passes the suite and a random-trace comparison of source and copy on 3.11, 3.14 and PyPy 3.11, keeps `TTLCache` order and copies a cache holding itself (Code #10); its speed is unmeasured. |
 | 2 | Low | `Cache.__setitem__` / `__delitem__` | Size accounting assumes a value's size is stable after insertion; mutating cached values in place desyncs `currsize`. Documented footgun. |
 | 3 | Low | `_decorator.py` `_ConditionMixin` / `_ConditionInfoMixin` via `@cachedmethod` | Pending sets are per wrapper, so two instances sharing one cache and condition do not coordinate pending keys. |
 | 4 | Low | condition variants of `@cached` / `@cachedmethod` | Same-thread recursion on the same key hangs on its own pending marker, where the `lock` variants raise `RecursionError`. Suggested fix: make the pending set a dict of key to `threading.get_ident()` and let the owning thread call the function uncached instead of waiting; the hit path stays unchanged, a miss pays one `get_ident()` call (unmeasured). |
@@ -82,7 +82,7 @@ inserts, new keys from `itertools.count()`, 19 ns included); decorators use
 | 2 | Info | The `self` keyword tests (`test_self_keyword`, #451) cover the default `@cached` and `@cachedmethod` wrappers and the class call only; the positional-only receivers of the lock, condition and `info` mixin `__call__` methods remain unguarded. |
 | 3 | Info | `__repr__` on timed caches is never asserted to expire on its own, and `currsize` only indirectly, through `cache_info()` in `test_func.py`'s `test_ttl_expire`; the cache tests assert both after `len()`, `clear()` or `__setitem__`. |
 | 4 | Info | `NoneMethodTest.test_none_info` asserts only that `cache_info()` raises `TypeError` when `cache(self)` returns `None`; that the call itself fails, and that `cachedmethod(None)` fails at the first call (Code #9), is unasserted. |
-| 5 | Info | `test_lfu_copy_use_counts` pickles with the default protocol and the C pickler only, which on 3.14.4 passes without the fix too (6000 use counts; not run on other versions), so there only its copy arms guard #474; `pickle._Pickler` fails without it from 150. Protocols 0 and 2 and the pure-Python pickler pass the same check at 3000 use counts in a probe (3.11, 3.12, 3.14). `TTLCache` and `TLRUCache` are copied only freshly filled, never with expired or reordered items. |
+| 5 | Info | `test_lfu_copy_use_counts` pickles with the default protocol and the C pickler only, which without the fix fails on 3.11 alone (from 247 use counts; from 2497 on 3.12 and 3.13, 1875 on PyPy 3.11, not up to 3000 on 3.14), so elsewhere only its copy arms guard #474; `pickle._Pickler` fails without it from 140 (3.11, 3.14; 600 on PyPy). Protocols 0 and 2 and the pure-Python pickler pass the same check at 3000 use counts in a probe (3.11, 3.12, 3.14). `TTLCache` and `TLRUCache` are copied only freshly filled, never with expired or reordered items. |
 
 ## Docs (`docs/index.rst`)
 
@@ -96,4 +96,4 @@ inserts, new keys from `itertools.count()`, 19 ns included); decorators use
 
 | # | Priority | Finding |
 |---|----------|---------|
-| 1 | Low | No entry yet for the commits after v8.0.0: the `LFUCache` deep-copy and pickle fix needs one, "(broken since v7.0.0)", the release that introduced the linked list; `Cache.__copy__` needs another, as shallow copies no longer share state with the original (potentially breaking change); the #466 note and the new tests fall under the documentation and test lines. |
+| 1 | Low | No entry yet for the commits after v8.0.0: the `LFUCache` deep-copy and pickle fix needs one, "(broken since v6.1.0)" as in the v7.3.1 section, which exists on `dev/v7.3.x` only (6.0.0 copies 400 use counts, 6.1.0 raises); `Cache.__copy__` needs another, as shallow copies no longer share state with the original (potentially breaking change); the #466 note and the new tests fall under the documentation and test lines. |
