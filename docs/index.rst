@@ -78,6 +78,13 @@ inserted into the cache.
    additionally need to override :meth:`__getitem__`,
    :meth:`__setitem__` and :meth:`__delitem__`.
 
+   A shallow copy of a cache, e.g. one made with :func:`copy.copy`,
+   shares its keys, values and any other attributes with the
+   original, but none of the cache's own bookkeeping, so adding or
+   removing items in one does not affect the other.  A subclass that
+   keeps mutable state of its own should extend :meth:`__copy__` to
+   copy that state as well.
+
    .. note::
 
       Even though :class:`Cache` and the subclasses provided by this
