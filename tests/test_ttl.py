@@ -25,6 +25,12 @@ class TTLTestCache(TTLCache):
         TTLCache.__init__(self, maxsize, ttl=ttl, timer=Timer(), **kwargs)
 
 
+class SlotsTTLCache(TTLTestCache):
+    __slots__ = ("extra",)
+
+    extra: str
+
+
 class TTLCacheTest(unittest.TestCase, CacheTestMixin):
     Cache = TTLTestCache
 
@@ -317,3 +323,21 @@ class TTLCacheTest(unittest.TestCase, CacheTestMixin):
         # items expire in the copy as in its source
         self.assertEqual([3, 4], list(cache))
         self.assertEqual([3], list(source))
+
+    def test_ttl_pickle_slots(self):
+        import pickle
+
+        source = SlotsTTLCache(maxsize=3, ttl=2)
+        source.extra = "extra"
+        source[1] = 1
+        source.timer.tick()
+        source.update({2: 2, 3: 3})
+
+        for protocol in range(2, pickle.HIGHEST_PROTOCOL + 1):
+            cache = pickle.loads(pickle.dumps(source, protocol))
+            self.assertEqual("extra", cache.extra)
+            self.assertEqual([1, 2, 3], list(cache))
+            cache.timer.tick()  # the copy has a timer of its own
+            self.assertEqual([2, 3], list(cache))
+
+        self.assertEqual([1, 2, 3], list(source))

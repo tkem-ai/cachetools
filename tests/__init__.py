@@ -596,6 +596,41 @@ class CacheTestMixin(SimplifiedTestCaseProtocol):
         del cache[2]
         self.assertEqual(1, cache.currsize)
 
+    def test_copy_slots(self):
+        import copy
+
+        class Cache(self.Cache):
+            __slots__ = ("extra", "unset")
+
+            extra: list[int]
+
+        source = Cache(maxsize=2)
+        source.extra = [0]
+        source.update({1: 1, 2: 2})
+
+        # a shallow copy shares slot values, like any other attribute
+        cache = copy.copy(source)
+        self.assertIs(source.extra, cache.extra)
+        self.assertFalse(hasattr(cache, "unset"))
+        self.assertEqual(2, len(cache))
+        cache[3] = 3
+        self.assertEqual(2, len(cache))
+        self.assertIn(3, cache)
+        self.assertEqual(2, len(source))
+        self.assertNotIn(3, source)
+
+        # a deep copy has its own
+        cache = copy.deepcopy(source)
+        self.assertEqual([0], cache.extra)
+        self.assertIsNot(source.extra, cache.extra)
+        self.assertFalse(hasattr(cache, "unset"))
+        self.assertEqual(2, len(cache))
+        cache[3] = 3
+        self.assertEqual(2, len(cache))
+        self.assertIn(3, cache)
+        self.assertEqual(2, len(source))
+        self.assertNotIn(3, source)
+
     def test_deepcopy(self):
         import copy
 

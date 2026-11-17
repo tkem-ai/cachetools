@@ -5,6 +5,12 @@ from cachetools import LFUCache
 from . import CacheTestMixin
 
 
+class SlotsLFUCache(LFUCache):
+    __slots__ = ("extra",)
+
+    extra: str
+
+
 class LFUCacheTest(unittest.TestCase, CacheTestMixin):
     Cache = LFUCache
 
@@ -165,3 +171,23 @@ class LFUCacheTest(unittest.TestCase, CacheTestMixin):
             self.assertEqual([0, n, *range(1, n)], order)
 
         self.assertEqual(n + 1, len(source))
+
+    def test_lfu_pickle_slots(self):
+        import pickle
+
+        source = SlotsLFUCache(maxsize=3)
+        source.extra = "extra"
+        source.update({1: 1, 2: 2, 3: 3})
+        for key in (1, 1, 2):
+            source[key]  # use counts are now 3, 2 and 1
+
+        for protocol in range(2, pickle.HIGHEST_PROTOCOL + 1):
+            cache = pickle.loads(pickle.dumps(source, protocol))
+            self.assertEqual("extra", cache.extra)
+            self.assertEqual(list(source), list(cache))
+            cache[4] = 4
+            self.assertEqual((4, 4), cache.popitem())
+            self.assertEqual((2, 2), cache.popitem())
+            self.assertEqual((1, 1), cache.popitem())
+
+        self.assertEqual(3, len(source))
