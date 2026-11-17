@@ -599,14 +599,14 @@ class TTLCache(_TimedCache):
             raise KeyError(key)
 
     def __iter__(self):
-        root = self.__root
-        curr = root.next
-        while curr is not root:
+        # iterate over the underlying dict, which raises RuntimeError
+        # if the cache changes size while iterating
+        links = self.__links
+        for key in Cache.__iter__(self):
             # "freeze" time for iterator access
             with self.timer as time:
-                if time < curr.expires:
-                    yield curr.key
-            curr = curr.next
+                if time < links[key].expires:
+                    yield key
 
     def __copy__(self):
         copy = super().__copy__()
@@ -755,11 +755,14 @@ class TLRUCache(_TimedCache):
             raise KeyError(key)
 
     def __iter__(self):
-        for curr in self.__order:
+        # iterate over the underlying dict, which raises RuntimeError
+        # if the cache changes size while iterating
+        items = self.__items
+        for key in Cache.__iter__(self):
             # "freeze" time for iterator access
             with self.timer as time:
-                if time < curr.expires and not curr.removed:
-                    yield curr.key
+                if time < items[key].expires:
+                    yield key
 
     def __copy__(self):
         copy = super().__copy__()
