@@ -317,3 +317,30 @@ class TTLCacheTest(unittest.TestCase, CacheTestMixin):
         # items expire in the copy as in its source
         self.assertEqual([3, 4], list(cache))
         self.assertEqual([3], list(source))
+
+    def test_ttl_deepcopy_timer(self):
+        import copy
+
+        class DeepCopyTimer(Timer):
+            def __deepcopy__(self, memo):
+                timer = type(self)(self.auto)
+                timer.time = self.time
+                return timer
+
+        source = TTLCache[int, int, int](maxsize=2, ttl=2, timer=DeepCopyTimer())
+        source[1] = 1
+
+        # a timer may define __deepcopy__ itself
+        cache = copy.deepcopy(source)
+        self.assertIsNot(source.timer, cache.timer)
+        self.assertEqual(0, cache.timer())
+        cache[2] = 2
+        self.assertEqual([1, 2], sorted(cache))
+
+        # the copy has a timer of its own
+        cache.timer.tick()
+        cache.timer.tick()
+        self.assertEqual(2, cache.timer())
+        self.assertEqual(0, source.timer())
+        self.assertEqual(0, len(cache))
+        self.assertEqual(1, len(source))
