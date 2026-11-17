@@ -457,6 +457,55 @@ class CacheTestMixin(SimplifiedTestCaseProtocol):
         self.assertEqual(1, len(cache))
         self.assertEqual(4, cache.currsize)
 
+    def test_iter_update(self):
+        cache = self.Cache(maxsize=3)
+        cache.update({1: 1, 2: 2, 3: 3})
+
+        # updating an item while iterating visits each key once
+        keys = []
+        for key in cache:
+            keys.append(key)
+            cache[key] = key * 10
+        self.assertEqual([1, 2, 3], sorted(keys))
+        self.assertEqual([10, 20, 30], sorted(cache.values()))
+
+        # as does updating all items at each step
+        keys = []
+        for key in cache:
+            keys.append(key)
+            for other in (1, 2, 3):
+                cache[other] = other
+        self.assertEqual([1, 2, 3], sorted(keys))
+        self.assertEqual([1, 2, 3], sorted(cache.values()))
+
+        keys = []
+        for key, value in cache.items():
+            keys.append(key)
+            cache[key] = value + 1
+        self.assertEqual([1, 2, 3], sorted(keys))
+        self.assertEqual([2, 3, 4], sorted(cache.values()))
+        self.assertEqual(3, len(cache))
+
+    def test_iter_modify(self):
+        # like a dict, a cache must not change size while iterating
+        cache = self.Cache(maxsize=4)
+        cache.update({1: 1, 2: 2, 3: 3})
+        with self.assertRaises(RuntimeError):
+            for key in cache:
+                cache[key + 10] = key
+
+        cache = self.Cache(maxsize=4)
+        cache.update({1: 1, 2: 2, 3: 3})
+        with self.assertRaises(RuntimeError):
+            for key in cache:
+                del cache[key]
+
+        cache = self.Cache(maxsize=4)
+        cache.update({1: 1, 2: 2, 3: 3})
+        with self.assertRaises(RuntimeError):
+            for _ in cache:
+                cache.clear()
+
     def test_pickle(self):
         import pickle
 
