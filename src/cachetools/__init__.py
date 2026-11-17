@@ -117,6 +117,10 @@ class Cache(collections.abc.MutableMapping):
         cls = type(self)
         copy = cls.__new__(cls)
         copy.__dict__.update(self.__dict__)
+        state = object.__getstate__(self)
+        if isinstance(state, tuple):  # subclass with __slots__
+            for name, value in state[1].items():
+                setattr(copy, name, value)
         copy.__data = self.__data.copy()
         if self.__size is not None:
             copy.__size = self.__size.copy()
@@ -292,6 +296,10 @@ class LFUCache(Cache):
         return copy
 
     def __setstate__(self, state):
+        if isinstance(state, tuple):  # subclass with __slots__
+            state, slots = state
+            for name, value in slots.items():
+                setattr(self, name, value)
         self.__dict__.update(state)
         root = self.__root
         root.prev = root.next = root
@@ -619,6 +627,10 @@ class TTLCache(_TimedCache):
         return copy
 
     def __setstate__(self, state):
+        if isinstance(state, tuple):  # subclass with __slots__
+            state, slots = state
+            for name, value in slots.items():
+                setattr(self, name, value)
         self.__dict__.update(state)
         root = self.__root
         root.prev = root.next = root
