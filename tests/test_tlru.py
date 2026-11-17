@@ -447,3 +447,32 @@ class TLRUCacheTest(unittest.TestCase, CacheTestMixin):
         source.timer.tick()
         self.assertEqual([], list(source))
         self.assertEqual([4], list(cache))
+
+    def test_tlru_deepcopy_timer(self):
+        import copy
+
+        class DeepCopyTimer(Timer):
+            def __deepcopy__(self, memo):
+                timer = type(self)(self.auto)
+                timer.time = self.time
+                return timer
+
+        source = TLRUCache[int, int, int](
+            maxsize=2, ttu=lambda _, v, t: t + v, timer=DeepCopyTimer()
+        )
+        source[1] = 2
+
+        # a timer may define __deepcopy__ itself
+        cache = copy.deepcopy(source)
+        self.assertIsNot(source.timer, cache.timer)
+        self.assertEqual(0, cache.timer())
+        cache[2] = 2
+        self.assertEqual([1, 2], sorted(cache))
+
+        # the copy has a timer of its own
+        cache.timer.tick()
+        cache.timer.tick()
+        self.assertEqual(2, cache.timer())
+        self.assertEqual(0, source.timer())
+        self.assertEqual(0, len(cache))
+        self.assertEqual(1, len(source))
