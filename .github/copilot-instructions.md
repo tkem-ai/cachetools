@@ -58,4 +58,6 @@ review process.
 - Cache subclasses that define `__slots__` are unsupported: a shallow copy lacks the
   slot values, and deep-copying or pickling such an `LFUCache` or `TTLCache` subclass
   raises `ValueError`. A subclass that adds state of its own provides its own
-  `__copy__` (and `__setstate__`); accepted.
+  `__copy__` (and `__setstate__`); accepted. `__slots__` gains nothing there: every
+  `Cache` instance has a `__dict__` anyway, so a slot saves no memory and does not
+  restrict attributes.
