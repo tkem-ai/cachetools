@@ -447,3 +447,35 @@ class TLRUCacheTest(unittest.TestCase, CacheTestMixin):
         source.timer.tick()
         self.assertEqual([], list(source))
         self.assertEqual([4], list(cache))
+
+    def test_tlru_iter_modify(self):
+        cache = TLRUCache[int, int, int](
+            maxsize=6, ttu=lambda _, v, t: t + 2, timer=Timer()
+        )
+        cache.update({1: 1, 2: 2, 3: 3})
+
+        # items inserted while iterating are not visited
+        keys = []
+        for key in cache:
+            keys.append(key)
+            cache[key + 10] = key
+        self.assertEqual([1, 2, 3], sorted(keys))
+        self.assertEqual([1, 2, 3, 11, 12, 13], sorted(cache))
+
+        # items removed while iterating are skipped
+        keys = []
+        for key in cache:
+            keys.append(key)
+            for other in [k for k in cache if k != key]:
+                del cache[other]
+        self.assertEqual(1, len(keys))
+        self.assertEqual(keys, list(cache))
+
+        # nothing is left to visit after clearing the cache
+        cache.update({1: 1, 2: 2, 3: 3})
+        keys = []
+        for key in cache:
+            keys.append(key)
+            cache.clear()
+        self.assertEqual(1, len(keys))
+        self.assertEqual(0, len(cache))
