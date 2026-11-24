@@ -1,6 +1,7 @@
 import unittest
 from threading import Barrier, Condition, Event, Lock, Thread
 
+import cachetools.func
 from cachetools import LRUCache, cached, cachedmethod
 
 
@@ -176,6 +177,68 @@ class ThreadingTest(unittest.TestCase):
 
                 with self.assertRaises(RuntimeError):
                     Cached().method()
+
+    def test_cached_cond_recursion(self):
+        # a function calling itself with the same arguments, e.g. to
+        # retry, must not wait for its own pending key
+        for info in (False, True):
+            for lock in (None, Lock()):
+                with self.subTest(info=info, lock=lock):
+                    cond = Condition(lock)
+                    calls = []
+
+                    @cached(LRUCache(1), lock=lock, condition=cond, info=info)
+                    def func(calls=calls):
+                        calls.append(None)
+                        return func() if len(calls) < 3 else object()
+
+                    self.run_cond_recursion_test(func, calls, info)
+
+    def test_cachedmethod_cond_recursion(self):
+        for info in (False, True):
+            with self.subTest(info=info):
+                cache = LRUCache(1)
+                cond = Condition()
+                calls = []
+
+                class Cached:
+                    @cachedmethod(lambda _: cache, condition=lambda _: cond, info=info)
+                    def method(self, calls=calls):
+                        calls.append(None)
+                        return self.method() if len(calls) < 3 else object()
+
+                self.run_cond_recursion_test(Cached().method, calls, info)
+
+    def test_func_recursion(self):
+        calls = []
+
+        @cachetools.func.lru_cache
+        def func(calls=calls):
+            calls.append(None)
+            return func() if len(calls) < 3 else object()
+
+        self.run_cond_recursion_test(func, calls, True)
+
+    def run_cond_recursion_test(self, func, calls, info):
+        results = []
+
+        def run():
+            results.append(func())
+            results.append(func())
+
+        thread = Thread(target=run, daemon=True)
+        thread.start()
+        thread.join(timeout=self.TIMEOUT)
+        self.assertFalse(thread.is_alive())
+        # recursive calls are not cached, only the outermost one is
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(results), 2)
+        self.assertIs(results[0], results[1])
+        if info:
+            cache_info = func.cache_info()
+            self.assertEqual(cache_info.hits, 1)
+            self.assertEqual(cache_info.misses, 3)
+            self.assertEqual(cache_info.currsize, 1)
 
     def run_cond_wait_test(self, func, cond, started, release, calls):
         results = [None] * 2
