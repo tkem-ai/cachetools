@@ -363,7 +363,7 @@ often called with the same arguments:
    calling the same wrapper with that key wait, then check the cache
    again.  If the computing thread calls the wrapper recursively with
    the same key, the recursive call runs uncached and counts as a
-   miss when ``info=True``.  Only the outermost call can store a
+   miss when `info=True`.  Only the outermost call can store a
    result for that key.
 
    .. note::
