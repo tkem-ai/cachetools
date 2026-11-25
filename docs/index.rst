@@ -366,6 +366,10 @@ often called with the same arguments:
    miss when `info=True`.  Only the outermost call can store a result
    for that key.
 
+   A call that would wait for a thread which is itself waiting for
+   the calling thread is treated like a recursive call, since both
+   threads would otherwise wait for each other forever.
+
    .. note::
 
       Although providing a `lock` alone is generally sufficient to
