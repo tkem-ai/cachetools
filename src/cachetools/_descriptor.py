@@ -147,6 +147,9 @@ class _Unbound:
             obj, *args = args
         else:
             obj = self.__pop_receiver(kwargs)
+        if obj is None:
+            msg = "Cannot call @cachedmethod through the class without an instance"
+            raise TypeError(msg)
         return self.__descriptor.__get__(obj)(*args, **kwargs)
 
     def __pop_receiver(self, kwargs):
@@ -162,11 +165,7 @@ class _Unbound:
             else:
                 if param.kind is param.POSITIONAL_OR_KEYWORD:
                     self.__receiver = param.name
-        try:
-            return kwargs.pop(self.__receiver)
-        except KeyError:
-            msg = "Cannot call @cachedmethod through the class without an instance"
-            raise TypeError(msg) from None
+        return kwargs.pop(self.__receiver, None)
 
 
 class _ClassMethodDescriptor(_MethodDescriptor):
