@@ -18,8 +18,10 @@ import warnings
 
 
 def _condition_info(func, cache, key, lock, cond, info):
+    from threading import get_ident
+
     hits = misses = 0
-    pending = set()
+    pending = {}  # maps keys to the calling thread
 
     def wrapper(*args, **kwargs):
         nonlocal hits, misses
@@ -27,14 +29,24 @@ def _condition_info(func, cache, key, lock, cond, info):
         with lock:
             # apparently significantly faster than cond.wait_for(...)
             while k in pending:
+                if pending[k] == get_ident():
+                    # A recursive call would wait for its own pending
+                    # call forever, so it calls the function again.
+                    misses += 1
+                    recursive = True
+                    break
                 cond.wait()
-            try:
-                result = cache[k]
-                hits += 1
-                return result
-            except KeyError:
-                pending.add(k)
-                misses += 1
+            else:
+                try:
+                    result = cache[k]
+                    hits += 1
+                    return result
+                except KeyError:
+                    pending[k] = get_ident()
+                    misses += 1
+                    recursive = False
+        if recursive:
+            return func(*args, **kwargs)
         try:
             v = func(*args, **kwargs)
             with lock:
@@ -45,7 +57,7 @@ def _condition_info(func, cache, key, lock, cond, info):
                 return v
         finally:
             with lock:
-                pending.remove(k)
+                del pending[k]
                 cond.notify_all()
 
     def cache_clear():
@@ -155,19 +167,30 @@ def _uncached_info(func, info):
 
 
 def _condition(func, cache, key, lock, cond):
-    pending = set()
+    from threading import get_ident
+
+    pending = {}  # maps keys to the calling thread
 
     def wrapper(*args, **kwargs):
         k = key(*args, **kwargs)
         with lock:
             # apparently significantly faster than cond.wait_for(...)
             while k in pending:
+                if pending[k] == get_ident():
+                    # A recursive call would wait for its own pending
+                    # call forever, so it calls the function again.
+                    recursive = True
+                    break
                 cond.wait()
-            try:
-                result = cache[k]
-                return result
-            except KeyError:
-                pending.add(k)
+            else:
+                try:
+                    result = cache[k]
+                    return result
+                except KeyError:
+                    pending[k] = get_ident()
+                    recursive = False
+        if recursive:
+            return func(*args, **kwargs)
         try:
             v = func(*args, **kwargs)
             with lock:
@@ -178,7 +201,7 @@ def _condition(func, cache, key, lock, cond):
                 return v
         finally:
             with lock:
-                pending.remove(k)
+                del pending[k]
                 cond.notify_all()
 
     def cache_clear():
