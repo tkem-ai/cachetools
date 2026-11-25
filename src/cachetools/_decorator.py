@@ -70,6 +70,7 @@ class _ConditionMixin:
         self.__func = func
         self.__get_ident = get_ident
         self.__pending = {}  # maps keys to the calling thread
+        self.__waiting = {}  # maps waiting threads to pending keys
 
     def __call__(self, /, *args, **kwargs):
         cache = self.cache
@@ -79,12 +80,22 @@ class _ConditionMixin:
 
         with lock:
             while key in self.__pending:
-                if self.__pending[key] == self.__get_ident():
+                ident = self.__get_ident()
+                thread = self.__pending[key]
+                while thread != ident and thread in self.__waiting:
+                    thread = self.__pending.get(self.__waiting[thread])
+                if thread == ident:
                     # A recursive call would wait for its own pending
-                    # call forever, so it calls the function again.
+                    # call forever, either directly or through other
+                    # threads waiting for it, so it calls the function
+                    # again.
                     recursive = True
                     break
-                cond.wait()
+                self.__waiting[ident] = key
+                try:
+                    cond.wait()
+                finally:
+                    del self.__waiting[ident]
             else:
                 try:
                     return cache[key]
@@ -189,6 +200,7 @@ class _ConditionInfoMixin:
         self.__hits = self.__misses = 0
         self.__get_ident = get_ident
         self.__pending = {}  # maps keys to the calling thread
+        self.__waiting = {}  # maps waiting threads to pending keys
 
     def __call__(self, /, *args, **kwargs):
         cache = self.cache
@@ -198,13 +210,23 @@ class _ConditionInfoMixin:
 
         with lock:
             while key in self.__pending:
-                if self.__pending[key] == self.__get_ident():
+                ident = self.__get_ident()
+                thread = self.__pending[key]
+                while thread != ident and thread in self.__waiting:
+                    thread = self.__pending.get(self.__waiting[thread])
+                if thread == ident:
                     # A recursive call would wait for its own pending
-                    # call forever, so it calls the function again.
+                    # call forever, either directly or through other
+                    # threads waiting for it, so it calls the function
+                    # again.
                     self.__misses += 1
                     recursive = True
                     break
-                cond.wait()
+                self.__waiting[ident] = key
+                try:
+                    cond.wait()
+                finally:
+                    del self.__waiting[ident]
             else:
                 try:
                     result = cache[key]
