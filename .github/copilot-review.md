@@ -1,18 +1,19 @@
 # Code Review — cachetools 8.0.2
 
 **Date:** 2026-11-25, `__version__` 8.0.2; baseline `v8.0.2` (`0876d5e`).
-**Reviewed:** `develop` at `4cfe19b` "Docs for recursive invocations with pending set (fixup).", plus this review commit.
+**Reviewed:** `develop` at `2d23a62` "Update copilot instructions and review." (source, tests and docs as of `fd503ad` "Reject None as the receiver of unbound @cachedmethod calls."), plus this review commit.
 
-**CI status:** Actions has not run on `4cfe19b`. All 58 doctests passed on the updated docs; all 480 unit tests passed on CPython 3.11.2 and 3.12.3 on the unchanged source and tests at `30bb0e4`.
-**Coverage:** 100% branch coverage on both local interpreters.
+**CI status:** `tox -p auto` passes on CPython 3.14.6 (480 tests, pyright 0 errors, 0 warnings); the tests also pass on 3.11.15, 3.12.13, 3.13.17, 3.15.0b4, free-threaded 3.13.14 and 3.14.6, and PyPy 7.3.23 (3.11). Actions is green for `2d23a62`.
+**Coverage:** 100% on 3.11, 3.12 and PyPy; 3.13 and later lack `_descriptor.py:36`.
 
 ## Code — Potential Issues
 
 | # | Priority | Location | Finding |
 |---|----------|----------|---------|
-| 1 | Info | `Cache` (inherited `items()` / `values()`) | Iterating either view reads through `__getitem__`; a full traversal changed the next victim from `b` to `a` in `LRUCache`, unexpired `TTLCache` and `TLRUCache`, and an `LFUCache` frequency tie. `keys()`, `in` and `repr()` do not count as uses. |
-| 2 | Info | `_decorator.py:72, 191` via `@cachedmethod` | Pending keys are tracked per instance wrapper, not per cache or condition, so sharing both does not prevent duplicate work. An event-controlled probe with deliberately colliding keys and different results returned both values and left the last writer's result cached. |
-| 3 | Info | `TTLCache.__iter__` / `TLRUCache.__iter__` (#469) | Both yield inside `with self.timer`, so while an iterator is suspended the whole cache sees the frozen time: expired items stay visible and an item set meanwhile takes its expiry from it. Yielding outside the freeze could make `for key in cache: cache[key]` raise `KeyError`, a potentially breaking change; undocumented. |
+| 1 | Low | condition variants of `@cached` / `@cachedmethod` | Two threads that each compute one key and call the wrapper with the other's key wait for each other forever; `77ae12c` only covers recursion within one thread. The lock variants and `functools.lru_cache` return, as `cachetools.func` did through 5.5.2 (hangs since 6.0.0). A fix needs to know which key each waiting thread is computing; undocumented. |
+| 2 | Info | `Cache` (inherited `items()` / `values()`) | Iterating either view reads through `__getitem__`; a full traversal changed the next victim from `b` to `a` in `LRUCache`, unexpired `TTLCache` and `TLRUCache`, and an `LFUCache` frequency tie. `keys()`, `in` and `repr()` do not count as uses. |
+| 3 | Info | `_decorator.py:72, 191` via `@cachedmethod` | Pending keys are tracked per instance wrapper, not per cache or condition, so sharing both does not prevent duplicate work. An event-controlled probe with deliberately colliding keys and different results returned both values and left the last writer's result cached. |
+| 4 | Info | `TTLCache.__iter__` / `TLRUCache.__iter__` (#469) | Both yield inside `with self.timer`, so while an iterator is suspended the whole cache sees the frozen time: expired items stay visible and an item set meanwhile takes its expiry from it. Yielding outside the freeze could make `for key in cache: cache[key]` raise `KeyError`, a potentially breaking change; undocumented. |
 
 ## Performance
 
@@ -50,7 +51,7 @@ of 1000 items, in µs: `dict` 2.4, `Cache` 2.8, `FIFOCache` 36, `LRUCache` 36, `
 3.7 for the untimed cache classes, `TTLCache` 195, `TLRUCache` 197. The `func.lru_cache`
 row is from 2026-11-24, after #485 (best of three runs; the other decorator rows agree
 within 3%). Timed-cache hit and contains figures vary by 20 ns between processes.
-The condition-wrapper and `func.lru_cache` timings predate `3a4bf24`; the class-call timing predates `30bb0e4`. Neither was remeasured because the local environment is a VM.
+The condition-wrapper and `func.lru_cache` rows predate `77ae12c` (a miss now also calls `get_ident()`, and each new `@cachedmethod` condition wrapper runs an import statement), the class-call figure predates `fd503ad`; not remeasured (VM).
 
 | # | Priority | Location | Finding |
 |---|----------|----------|---------|
@@ -77,7 +78,7 @@ The condition-wrapper and `func.lru_cache` timings predate `3a4bf24`; the class-
 | 3 | Info | `__repr__` on timed caches is never asserted to expire on its own, and `currsize` only indirectly through `cache_info()`. |
 | 4 | Info | `NoneMethodTest.test_none_info` asserts only that `cache_info()` raises `TypeError` when `cache(self)` returns `None`; that the call itself fails with `TypeError` is unasserted. |
 | 5 | Info | `test_lfu_copy_use_counts` pickles with the default protocol and the C pickler only, which without the #474 fix fails on 3.11 only (from 247 use counts), so elsewhere only its deep-copy arm guards that fix. |
-| 6 | Info | No test covers #485: `test_func.py` never looks at `cache_lock` or `cache_condition`, so passing the condition alone again would only show in the benchmark. |
+| 6 | Info | No test covers #485: `test_func.py` never looks at `cache_lock` or `cache_condition`, so passing the condition alone again would only show in the benchmark. Likewise, the recursion tests use `condition` alone, not `lock` with `Condition(lock)` as `cachetools.func` passes it. |
 
 ## Docs (`docs/index.rst`)
 
@@ -86,12 +87,12 @@ The condition-wrapper and `func.lru_cache` timings predate `3a4bf24`; the class-
 | 1 | Low | Neither `@cached` nor `cachetools.func.*_cache` mention decorating methods, where cache and counters are shared across instances. |
 | 2 | Low | The `cached` and `cachedmethod` sections describe `cache_lock` as the `lock` parameter, though with `condition` alone it is the condition object. The `cached` section also calls the wrapper a function rather than a callable object. |
 | 3 | Low | New in 8.0.1 and undocumented: what a shallow copy of a cache shares (keys, values and attributes) and that a subclass with mutable state of its own must extend `__copy__`; that `@cached` wrappers copy and deep-copy as themselves; and that `@cachedmethod` must be the outermost decorator, where the docs name only `classmethod`. |
-| 4 | Low | Since 8.0.2, `TTLCache` and `TLRUCache` snapshot keys when iteration starts: brand-new keys are skipped, missing or expired keys are filtered, and a deleted then reinserted key can still be visited in its original position. Document this and the suspended-iterator behavior (Code #3). |
+| 4 | Low | Since 8.0.2, `TTLCache` and `TLRUCache` snapshot keys when iteration starts: brand-new keys are skipped, missing or expired keys are filtered, and a deleted then reinserted key can still be visited in its original position. Document this and the suspended-iterator behavior (Code #4). |
 | 5 | Info | The `README.rst` PyOWM and `get_pep` snippets are outside the Sphinx doctest run and were not rerun here. |
 
 ## Changelog
 | # | Priority | Finding |
 |---|----------|---------|
 | 1 | Low | There is no section after v8.0.2 yet for the `cachetools.func` speed-up (#485) or the documentation improvements. The speed-up has a visible side effect: `cache_lock` of the `func` wrappers is now an `RLock`, no longer the `Condition` in `cache_condition`. |
-| 2 | Low | The recursion fix also needs a release note: “Fix a deadlock when a condition-backed decorator is called recursively with the same cache key.” |
-| 3 | Low | Suggested release note for the receiver fix: “Reject ``None`` as the receiver of unbound ``@cachedmethod`` calls.” |
+| 2 | Low | The recursion fix needs an entry, e.g. “Fix a deadlock when a condition-backed decorator is called recursively with the same cache key (broken since v6.0.0).”; 5.5.2 returns for `cachetools.func`, 6.0.0 hangs. Side effect: such calls run uncached and count as misses. |
+| 3 | Low | The receiver fix needs an entry, e.g. “Reject ``None`` as the receiver of unbound ``@cachedmethod`` calls.”; `Cls.method(None, obj, ...)` ran as `obj.method(...)` since v7.2.2 (7.2.1 raised `AttributeError`). Both fixes also apply to 7.3.3. |
