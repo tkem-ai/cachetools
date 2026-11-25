@@ -275,6 +275,63 @@ class ThreadingTest(unittest.TestCase):
         self.assertEqual(results, {"owner": error, "waiter": 42})
         self.assertEqual(func.cache[()], 42)
 
+    def test_cached_cond_deadlock(self):
+        for info in (False, True):
+            with self.subTest(info=info):
+                barrier = Barrier(2, timeout=self.TIMEOUT)
+                calls = []
+
+                @cached(LRUCache(2), condition=Condition(), info=info)
+                def func(key, calls=calls, barrier=barrier):
+                    calls.append(key)
+                    if len(calls) > 2:
+                        return 0
+                    barrier.wait()
+                    return func(1 - key) + 1
+
+                self.run_cond_deadlock_test(func, calls, info)
+
+    def test_cachedmethod_cond_deadlock(self):
+        for info in (False, True):
+            with self.subTest(info=info):
+                barrier = Barrier(2, timeout=self.TIMEOUT)
+                cache = LRUCache(2)
+                cond = Condition()
+                calls = []
+
+                class Cached:
+                    @cachedmethod(lambda _: cache, condition=lambda _: cond, info=info)
+                    def method(self, key, calls=calls, barrier=barrier):
+                        calls.append(key)
+                        if len(calls) > 2:
+                            return 0
+                        barrier.wait()
+                        return self.method(1 - key) + 1
+
+                self.run_cond_deadlock_test(Cached().method, calls, info)
+
+    def run_cond_deadlock_test(self, func, calls, info):
+        results = []
+        # two threads, each calling the function with the key the other
+        # one is computing, must not wait for each other forever
+        threads = [
+            Thread(target=lambda key=key: results.append(func(key)), daemon=True)
+            for key in (0, 1)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=self.TIMEOUT)
+            self.assertFalse(thread.is_alive())
+        # one thread waits for the other one, which calls the function
+        # again for the key the waiting thread is computing
+        self.assertEqual(sorted(results), [1, 2])
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sorted(func.cache.values()), [1, 2])
+        if info:
+            cache_info = func.cache_info()
+            self.assertEqual((cache_info.hits, cache_info.misses), (1, 3))
+
     def run_cond_wait_test(self, func, cond, started, release, calls):
         results = [None] * 2
 
