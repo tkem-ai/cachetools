@@ -65,12 +65,14 @@ class _WrapperBase:
 
 
 def _condition_info(method, cache, key, lock, cond, info):
+    from threading import get_ident
+
     class Descriptor(_MethodDescriptor):
         class Wrapper(_WrapperBase):
             def __init__(self, obj, descriptor):
                 super().__init__(obj, descriptor, method, cache, key, lock, cond)
                 self.__hits = self.__misses = 0
-                self.__pending = set()
+                self.__pending = {}  # maps keys to the calling thread
 
             def __call__(self, /, *args, **kwargs):
                 cache = self.cache
@@ -81,14 +83,24 @@ def _condition_info(method, cache, key, lock, cond, info):
                 with lock:
                     # apparently significantly faster than cond.wait_for(...)
                     while key in self.__pending:
+                        if self.__pending[key] == get_ident():
+                            # A recursive call would wait for its own pending
+                            # call forever, so it calls the method again.
+                            self.__misses += 1
+                            recursive = True
+                            break
                         cond.wait()
-                    try:
-                        result = cache[key]
-                        self.__hits += 1
-                        return result
-                    except KeyError:
-                        self.__pending.add(key)
-                        self.__misses += 1
+                    else:
+                        try:
+                            result = cache[key]
+                            self.__hits += 1
+                            return result
+                        except KeyError:
+                            self.__pending[key] = get_ident()
+                            self.__misses += 1
+                            recursive = False
+                if recursive:
+                    return method(self._obj, *args, **kwargs)
                 try:
                     val = method(self._obj, *args, **kwargs)
                     with lock:
@@ -99,7 +111,7 @@ def _condition_info(method, cache, key, lock, cond, info):
                         return val
                 finally:
                     with lock:
-                        self.__pending.remove(key)
+                        del self.__pending[key]
                         cond.notify_all()
 
             def cache_clear(self):
@@ -188,6 +200,8 @@ def _unlocked_info(method, cache, key, info):
 
 
 def _condition(method, cache, key, lock, cond):
+    from threading import get_ident
+
     # backward-compatible weakref dictionary for Python >= 3.13
     pending = weakref.WeakKeyDictionary()
 
@@ -197,11 +211,20 @@ def _condition(method, cache, key, lock, cond):
         with lock(self):
             # apparently significantly faster than cond.wait_for(...)
             while k in pending:
+                if pending[k] == get_ident():
+                    # A recursive call would wait for its own pending
+                    # call forever, so it calls the method again.
+                    recursive = True
+                    break
                 cond(self).wait()
-            try:
-                return c[k]
-            except KeyError:
-                pending.add(k)
+            else:
+                try:
+                    return c[k]
+                except KeyError:
+                    pending[k] = get_ident()
+                    recursive = False
+        if recursive:
+            return method(self, *args, **kwargs)
         try:
             v = method(self, *args, **kwargs)
             with lock(self):
@@ -212,7 +235,7 @@ def _condition(method, cache, key, lock, cond):
                 return v
         finally:
             with lock(self):
-                pending.remove(k)
+                del pending[k]
                 cond(self).notify_all()
 
     def cache_clear(self):
@@ -221,14 +244,14 @@ def _condition(method, cache, key, lock, cond):
             c.clear()
 
     def classmethod_wrapper(self, /, *args, **kwargs):
-        p = pending.setdefault(self, set())
+        p = pending.setdefault(self, {})
         return wrapper(self, p, *args, **kwargs)
 
     class Descriptor(_ClassMethodDescriptor):
         class Wrapper(_WrapperBase):
             def __init__(self, obj, descriptor):
                 super().__init__(obj, descriptor, method, cache, key, lock, cond)
-                self.__pending = set()
+                self.__pending = {}  # maps keys to the calling thread
 
             def __call__(self, /, *args, **kwargs):
                 return wrapper(self._obj, self.__pending, *args, **kwargs)
