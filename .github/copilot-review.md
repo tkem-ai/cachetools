@@ -1,19 +1,20 @@
 # Code Review — cachetools 8.0.3
 
-**Date:** 2026-11-27, `__version__` 8.0.3 (released as `v8.0.3`)
+**Date:** 2026-11-28, `__version__` 8.0.3 (released as `v8.0.3`)
 **Reviewed:** `develop` at `1328f56` "Various documentation improvements." (three test
 and docs commits on `master`, sources unchanged), plus this review commit.
 
-**CI status:** `tox -p auto` passes on CPython 3.14.4 (494 tests, pyright 0 errors, 0
-warnings), `py` on 3.11.15 and 3.12.13; PyPy and 3.13 not run here. Actions is green
-for `1328f56` (3.11–3.15, 3.13t–3.15t, PyPy 3.11).
-**Coverage:** 100% on 3.11 and 3.12; 3.14 lacks `_descriptor.py:36`.
+**CI status:** `tox -p auto` passes on CPython 3.14.6 (494 tests, pyright 0 errors, 0
+warnings); the tests also pass on 3.11.18, 3.12.3, 3.13.18, 3.15.0b4, free-threaded
+3.13.14 and 3.14.6, and PyPy 7.3.23 (3.11). Actions is green for `1328f56` and for
+the tree with this review (3.11–3.15, 3.13t–3.15t, PyPy 3.11).
+**Coverage:** 100% on 3.11, 3.12 and PyPy; 3.13 and later lack `_descriptor.py:36`.
 
 ## Code — Potential Issues
 
 | # | Priority | Location | Finding |
 |---|----------|----------|---------|
-| 1 | Low | `TTLCache.__iter__` / `TLRUCache.__iter__` (#469) | Both yield inside `with self.timer`, so while an iterator is suspended the whole cache sees the frozen time (tested): expired items stay visible, and an item set meanwhile takes its expiry from it, so one refreshed in a slow loop body expires early by that time. On PyPy the freeze lasts until the next garbage collection after breaking out of a `for` loop (probed on PyPy 7.3.21). Yielding outside the freeze, with `items()` / `values()` views that skip expired items, fixed both in a trial, but `for key in cache: cache[key]`, `other.update(cache)` and `OrderedDict(cache)` then raised `KeyError` in about 0.02% of passes at 1000 items and 1000 inserts per second; a potentially breaking change. |
+| 1 | Low | `TTLCache.__iter__` / `TLRUCache.__iter__` (#469) | Both yield inside `with self.timer`, so while an iterator is suspended the whole cache sees the frozen time (tested): expired items stay visible, and an item set meanwhile takes its expiry from it, so one refreshed in a slow loop body expires early by that time. On PyPy the freeze lasts until the next garbage collection after breaking out of a `for` loop (probed on PyPy 7.3.21 and 7.3.23). Yielding outside the freeze, with `items()` / `values()` views that skip expired items, fixed both in a trial, but `for key in cache: cache[key]`, `other.update(cache)` and `OrderedDict(cache)` then raised `KeyError` in about 0.02% of passes at 1000 items and 1000 inserts per second; a potentially breaking change. |
 | 2 | Info | `Cache` (inherited `items()` / `values()`) | Iterating either view (or `dict(cache)`, or comparing caches with `==`) reads through `__getitem__` and counts as a use of every item; `keys()`, `in` and `repr()` do not. In practice only `LRUCache` is affected (it then evicts in insertion order, as documented): `TTLCache` and `TLRUCache` only while they evict by least recent use, `LFUCache` only in ties, the other classes not at all; reading without counting as a use would be a potentially breaking change. |
 | 3 | Info | `_decorator.py:72, 191` via `@cachedmethod` | Pending keys are tracked per instance wrapper, not per cache or condition, so sharing both does not prevent duplicate work. An event-controlled probe with deliberately colliding keys and different results returned both values and left the last writer's result cached. |
 
